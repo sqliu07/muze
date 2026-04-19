@@ -3,6 +3,7 @@
 .omx/
 .playwright-mcp/
 .superpowers/
+frontend/test-results/
 datatest/
 demo.png
 demo1.png
@@ -11,4 +12,3 @@ demo3.png
 quote_icon_llm_friendly.svg
 quote_icon_llm_friendly.svg:Zone.Identifier
 tests/
-frontend/test-results/
