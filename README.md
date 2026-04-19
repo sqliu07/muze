@@ -124,7 +124,7 @@ docker run -p 8000:8000 \
 - LDDC 通过 `git submodule` 引入，路径为 `3rdparty/LDDC`
 - 运行时默认读取 `LDDC_REPO_PATH`（容器默认 `/app/3rdparty/LDDC`）
 
-## CI/CD 与版本发布
+## CI/CD 与镜像发布
 
 工作流：`.github/workflows/release-image.yml`
 
@@ -135,7 +135,6 @@ docker run -p 8000:8000 \
 行为：
 
 - 构建并推送 GHCR 镜像
-- 创建 GitHub Release（名称含版本号与构建日期）
 
 ## 许可证
 
