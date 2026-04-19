@@ -81,6 +81,12 @@ npm run dev
 docker build -t muze .
 ```
 
+### 从 Release 资产导入镜像（tar.gz）
+
+```bash
+docker load -i muze-<版本号>-<构建日期>-linux-amd64.tar.gz
+```
+
 ### 运行容器
 
 ```bash
@@ -135,6 +141,7 @@ docker run -p 8000:8000 \
 行为：
 
 - 构建并推送 GHCR 镜像
+- 在 GitHub Release 上传可导入镜像包（`tar.gz` + `sha256`）
 
 ## 许可证
 
