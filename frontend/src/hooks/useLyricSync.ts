@@ -83,7 +83,7 @@ export function useLyricSync(lyrics: LyricsOut | null | undefined): LyricSyncRes
     const currentLineTime = lines[currentIndex].time
     const nextLineTime = lines[currentIndex + 1].time
     const gap = nextLineTime - currentLineTime
-    if (gap < 8) return null
+    if (gap < 10) return null
 
     const leadIn = 1.2
     const fillBeforeNext = 1.0
