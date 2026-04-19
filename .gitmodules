@@ -1,0 +1,3 @@
+[submodule "3rdparty/LDDC"]
+	path = 3rdparty/LDDC
+	url = https://github.com/chenmozhijin/LDDC.git
