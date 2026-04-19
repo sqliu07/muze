@@ -11,7 +11,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 COVERS_DIR = DATA_DIR / "covers"
 DB_PATH = DATA_DIR / "muze.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
-LOGS_DIR = DATA_DIR / "logs"
+LOGS_DIR = Path(os.getenv("LOGS_DIR", DATA_DIR / "logs"))
 
 SUPPORTED_FORMATS = {".mp3", ".flac", ".wav", ".aiff", ".m4a", ".ogg"}
 

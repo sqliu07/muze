@@ -1,9 +1,8 @@
 import { NavLink } from "react-router-dom"
-import { Home, Music, Disc, Mic2, ListMusic, Heart, FolderOpen } from "lucide-react"
+import { Music, Disc, Mic2, ListMusic, Heart, FolderOpen } from "lucide-react"
 import { ThemeSwitcher } from "@/components/common/ThemeSwitcher"
 
 const navItems = [
-  { to: "/", icon: Home, label: "首页", end: true },
   { to: "/tracks", icon: Music, label: "全部歌曲", end: true },
   { to: "/albums", icon: Disc, label: "专辑" },
   { to: "/artists", icon: Mic2, label: "歌手" },

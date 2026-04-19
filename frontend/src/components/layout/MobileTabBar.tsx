@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom"
 import { Music, Disc, ListMusic, Heart } from "lucide-react"
 
 const tabs = [
-  { to: "/", icon: Music, label: "歌曲" },
+  { to: "/tracks", icon: Music, label: "歌曲" },
   { to: "/albums", icon: Disc, label: "专辑" },
   { to: "/playlists", icon: ListMusic, label: "歌单" },
   { to: "/favorites", icon: Heart, label: "收藏" },
@@ -15,7 +15,7 @@ export function MobileTabBar() {
         <NavLink
           key={to}
           to={to}
-          end={to === "/"}
+          end={to === "/tracks"}
           className={({ isActive }) =>
             `flex flex-1 flex-col items-center gap-1 py-2 text-xs transition-colors ${
               isActive ? "text-primary" : "text-muted-foreground"

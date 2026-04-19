@@ -15,6 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DATA_DIR=/app/data \
+    LOGS_DIR=/app/logs \
     LDDC_REPO_PATH=/app/3rdparty/LDDC \
     HOST=0.0.0.0 \
     PORT=8000
@@ -36,7 +37,7 @@ RUN mkdir -p /app/licenses \
     && cp ./3rdparty/LDDC/LICENSE /app/licenses/LDDC-GPL-3.0.txt
 
 RUN useradd --create-home --uid 10001 appuser \
-    && mkdir -p /app/data \
+    && mkdir -p /app/data /app/logs \
     && chown -R appuser:appuser /app
 
 USER appuser
@@ -48,7 +49,7 @@ LABEL org.opencontainers.image.title="muze" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.licenses="GPL-3.0"
 
-VOLUME ["/app/data", "/music"]
+VOLUME ["/app/data", "/app/logs", "/music"]
 EXPOSE 8000
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

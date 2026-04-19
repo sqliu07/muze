@@ -87,3 +87,11 @@ def test_scan_directory(db_session: Session, tmp_dir: Path):
 
     assert result["added"] == 2
     assert db_session.query(Track).count() == 2
+
+
+def test_to_simplified_text_normalizes_traditional_chinese():
+    """繁体歌名应在扫描阶段自动转为简体。"""
+    from app.services.scanner import _to_simplified_text
+
+    assert _to_simplified_text("陳奕迅") == "陈奕迅"
+    assert _to_simplified_text("  周杰倫  ") == "周杰伦"

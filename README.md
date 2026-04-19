@@ -20,6 +20,7 @@ git submodule update --init --recursive
 docker build -t muze .
 docker run -p 8000:8000 \
   -v /path/to/data:/app/data \
+  -v /path/to/logs:/app/logs \
   -v /path/to/music:/music \
   muze
 ```

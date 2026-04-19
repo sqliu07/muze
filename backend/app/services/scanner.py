@@ -35,6 +35,14 @@ _WRITEBACK_ARTIST_TAGS = (
     os.getenv("MUZE_WRITE_NORMALIZED_ARTIST_TAGS", "0").strip().lower()
     in {"1", "true", "yes", "on"}
 )
+_OPENCC_STATUS_LOGGED = False
+
+try:
+    from opencc import OpenCC
+
+    _OPENCC_T2S = OpenCC("t2s")
+except Exception:
+    _OPENCC_T2S = None
 
 
 def _get_tag(audio, key: str, default=None):
@@ -83,7 +91,25 @@ def _normalize_cjk(text: str) -> str:
 
 
 def _to_simplified_text(value: str) -> str:
-    return value.translate(_TRAD_TO_SIMP)
+    global _OPENCC_STATUS_LOGGED
+    text = value.strip()
+    if not text:
+        return text
+
+    if not _OPENCC_STATUS_LOGGED:
+        if _OPENCC_T2S is None:
+            logger.warning("OpenCC 未安装，当前仅使用内置繁简映射（覆盖范围有限）")
+        else:
+            logger.info("OpenCC t2s 已启用，繁体文本将自动转换为简体")
+        _OPENCC_STATUS_LOGGED = True
+
+    if _OPENCC_T2S is not None:
+        try:
+            text = _OPENCC_T2S.convert(text)
+        except Exception:
+            logger.debug("OpenCC 转换失败，回退内置映射", exc_info=True)
+
+    return text.translate(_TRAD_TO_SIMP)
 
 
 def _infer_disc_track_from_filename(path: Path) -> tuple[int | None, int | None]:
@@ -383,7 +409,15 @@ def scan_file(
     original_artist_text = str(artist_name).strip() if artist_name else None
     artist = _get_or_create_artist(db, str(artist_name) if artist_name else None)
     album_name = _to_simplified_text(str(album_title)) if album_title else None
-    title_text = _to_simplified_text(str(title))
+    raw_title_text = str(title).strip()
+    title_text = _to_simplified_text(raw_title_text)
+    if raw_title_text != title_text:
+        logger.info(
+            "歌曲名繁转简: '%s' -> '%s' (%s)",
+            raw_title_text,
+            title_text,
+            path,
+        )
     genre_text = _to_simplified_text(str(genre_val)) if genre_val else None
     album = _get_or_create_album(
         db,
