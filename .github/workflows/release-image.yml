@@ -67,6 +67,8 @@ jobs:
             type=raw,value=${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.build_date }}
 
       - name: Build and push image
+        id: ghcr_push
+        continue-on-error: true
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -78,6 +80,11 @@ jobs:
             VERSION=${{ needs.prepare.outputs.version }}
             BUILD_DATE=${{ needs.prepare.outputs.build_date }}
             VCS_REF=${{ github.sha }}
+
+      - name: Warn when GHCR push fails
+        if: steps.ghcr_push.outcome == 'failure'
+        run: |
+          echo "::warning::GHCR push failed (likely package permission). Release tar.gz artifact will still be published."
 
       - name: Build image tarball (linux/amd64)
         uses: docker/build-push-action@v6
