@@ -1,0 +1,11 @@
+.codex
+.codex/
+.omx/
+.playwright-mcp/
+.superpowers/
+frontend/test-results/
+datatest/
+demo.png
+demo1.png
+demo2.png
+demo3.png
