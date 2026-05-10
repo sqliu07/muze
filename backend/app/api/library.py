@@ -128,6 +128,23 @@ def remove_watch_folder(folder_id: int, db: Session = Depends(get_db)):
         db.query(Lyrics).filter(Lyrics.track_id.in_(track_ids)).delete(synchronize_session=False)
         db.query(Track).filter(Track.id.in_(track_ids)).delete(synchronize_session=False)
 
+    # 清理无歌曲的专辑和歌手
+    empty_album_ids = [
+        a.id for a in db.query(Album)
+        .filter(~db.query(Track).filter(Track.album_id == Album.id).exists())
+        .all()
+    ]
+    if empty_album_ids:
+        db.query(Album).filter(Album.id.in_(empty_album_ids)).delete(synchronize_session=False)
+
+    empty_artist_ids = [
+        a.id for a in db.query(Artist)
+        .filter(~db.query(Track).filter(Track.artist_id == Artist.id).exists())
+        .all()
+    ]
+    if empty_artist_ids:
+        db.query(Artist).filter(Artist.id.in_(empty_artist_ids)).delete(synchronize_session=False)
+
     db.delete(folder)
     db.commit()
     return {"ok": True, "removed_tracks": len(track_ids)}
