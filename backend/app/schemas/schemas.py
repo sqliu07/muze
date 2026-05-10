@@ -131,6 +131,8 @@ class LyricsSearch(BaseModel):
 
 class LyricsUpdate(BaseModel):
     content: str
+    source: Optional[str] = None
+    synced: Optional[bool] = None
 
 
 class LyricsCandidateOut(BaseModel):
@@ -139,6 +141,8 @@ class LyricsCandidateOut(BaseModel):
     word_level: bool = False
     preview: str
     content: str
+    song_title: str = ""
+    song_artist: str = ""
 
 
 # ── Playlist ────────────────────────────────────────────────────────────────

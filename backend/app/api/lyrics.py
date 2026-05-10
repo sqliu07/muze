@@ -203,6 +203,8 @@ def search_track_lyrics_lddc_candidates(
             "word_level": has_word_level_timestamps(c.content),
             "preview": (c.content or "")[:240],
             "content": c.content,
+            "song_title": c.song_title,
+            "song_artist": c.song_artist,
         }
         for c in candidates
     ]
@@ -215,17 +217,27 @@ def update_track_lyrics(
     """手动保存歌词内容。"""
     _get_track_or_404(track_id, db)
 
+    src = body.source or "manual"
+    is_synced = bool(body.synced) if body.synced is not None else False
+
+    # 覆盖前自动备份原始歌词
+    existing = db.query(Lyrics).filter_by(track_id=track_id).first()
+    if existing and not existing.original_content and existing.source in ("embedded", "lrc"):
+        existing.original_content = existing.content
+        existing.original_source = existing.source
+        db.commit()
+
     lyrics = db.query(Lyrics).filter_by(track_id=track_id).first()
     if lyrics:
         lyrics.content = body.content
-        lyrics.source = "manual"
-        lyrics.synced = False
+        lyrics.source = src
+        lyrics.synced = is_synced
     else:
         lyrics = Lyrics(
             track_id=track_id,
             content=body.content,
-            source="manual",
-            synced=False,
+            source=src,
+            synced=is_synced,
         )
         db.add(lyrics)
     db.commit()
@@ -243,11 +255,10 @@ def restore_original_lyrics(track_id: int, db: Session = Depends(get_db)):
 
     lyrics.content = lyrics.original_content
     lyrics.source = lyrics.original_source or "embedded"
-    # lrc files may contain timestamps
+    # 检测内容是否包含 LRC 时间戳（无论来源是 embedded 还是 lrc）
     lyrics.synced = bool(
-        lyrics.original_source == "lrc"
-        and lyrics.original_content
-        and "[" in lyrics.original_content
+        lyrics.original_content
+        and re.search(r"\[\d{1,2}:\d{2}", lyrics.original_content)
     )
     db.commit()
     db.refresh(lyrics)

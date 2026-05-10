@@ -45,6 +45,72 @@ class LDDCCandidate:
     content: str
     source: str
     synced: bool
+    song_title: str = ""
+    song_artist: str = ""
+
+
+_LIVE_RE = re.compile(r"(?i)\bLIVE\b|现场|演唱会|音乐会|live\s*版|现场版")
+
+
+def _is_live(title: str) -> bool:
+    """判断标题是否包含 LIVE / 现场 等标记。"""
+    return bool(_LIVE_RE.search(title))
+
+
+def _normalize(s: str) -> str:
+    """小写 + 去除标点空格，用于模糊比较。"""
+    return re.sub(r"[\s\-_·.,，。!！?？()（）\[\]【】「」『』\"']+", "", s).lower()
+
+
+def _similarity(a: str, b: str) -> float:
+    """简单字符级相似度（0~1），基于最长公共子串比例。"""
+    if not a or not b:
+        return 0.0
+    na, nb = _normalize(a), _normalize(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    # 包含关系给高分
+    if na in nb or nb in na:
+        return 0.9
+    # 用 difflib SequenceMatcher
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, na, nb).ratio()
+
+
+def _score_candidate(
+    song_title: str,
+    song_artist: str,
+    query_title: str,
+    query_artist: Optional[str],
+    source: str,
+    content: str,
+) -> float:
+    """给候选歌词打分（0~100），越高越匹配。"""
+    score = 0.0
+
+    # 标题匹配 (0~50)
+    title_sim = _similarity(song_title, query_title)
+    score += title_sim * 50
+
+    # 歌手匹配 (0~30)
+    if query_artist and song_artist:
+        artist_sim = _similarity(song_artist, query_artist)
+        score += artist_sim * 30
+    elif not query_artist:
+        # 没有查询歌手时，这部分分值给标题
+        score += title_sim * 15
+
+    # 逐字歌词加分 (0~10)
+    if has_word_level_timestamps(content):
+        score += 10
+
+    # LIVE 版扣分 (-30)
+    if _is_live(song_title):
+        score -= 30
+
+    return max(0.0, score)
 
 
 def has_word_level_timestamps(content: str) -> bool:
@@ -120,19 +186,41 @@ def _install_pyside6_stub() -> None:
     sys.modules["PySide6.QtWidgets"] = qtwidgets
 
 
+def _safe_get_attr(obj: object, *names: str) -> str:
+    """安全地从对象获取属性或字典键，返回第一个非空字符串值。"""
+    for name in names:
+        try:
+            val = getattr(obj, name, None)
+            if val is None and isinstance(obj, dict):
+                val = obj.get(name)
+            if val and isinstance(val, str):
+                return val.strip()
+        except Exception:
+            continue
+    return ""
+
+
+def _extract_song_meta(song: object) -> tuple[str, str]:
+    """从 LDDC song 对象中提取 (title, artist)。"""
+    title = _safe_get_attr(song, "title", "name", "song_name", "track")
+    artist = _safe_get_attr(song, "artist", "artist_name", "singer", "singers")
+    return title, artist
+
+
 def _collect_lddc_results_in_process(
     repo_path: Path,
     keyword: str,
     max_candidates: int = 8,
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, str, str, str]]:
+    """返回 (content, source, song_title, song_artist) 元组列表。"""
     inserted = False
     repo_path_str = str(repo_path)
     if repo_path_str not in sys.path:
         sys.path.insert(0, repo_path_str)
         inserted = True
 
-    collected: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
+    collected: list[tuple[str, str, str, str]] = []
+    seen: set[str] = set()
 
     try:
         _install_pyside6_stub()
@@ -168,12 +256,17 @@ def _collect_lddc_results_in_process(
                 continue
 
             for song in songs:
+                st_title, st_artist = _extract_song_meta(song)
                 try:
                     lyric_infos = list(source_api.get_lyricslist(song))[:3]
                 except Exception:
                     lyric_infos = [song]
 
                 for info in lyric_infos:
+                    # info 对象可能也有自己的标题/歌手，优先用 song 级的
+                    info_title, info_artist = _extract_song_meta(info)
+                    final_title = info_title or st_title
+                    final_artist = info_artist or st_artist
                     try:
                         lyrics = source_api.get_lyrics(info)
                         text = converter.convert2(
@@ -186,11 +279,11 @@ def _collect_lddc_results_in_process(
                         logger.debug("LDDC 转换歌词失败: source=%s keyword=%s", source_name, keyword, exc_info=True)
                         continue
                     if text and text.strip():
-                        item = (text.strip(), f"lddc:{source_name.lower()}")
-                        if item in seen:
+                        text_stripped = text.strip()
+                        if text_stripped in seen:
                             continue
-                        seen.add(item)
-                        collected.append(item)
+                        seen.add(text_stripped)
+                        collected.append((text_stripped, f"lddc:{source_name.lower()}", final_title, final_artist))
                         if len(collected) >= max_candidates:
                             return collected
     finally:
@@ -200,13 +293,8 @@ def _collect_lddc_results_in_process(
     return collected
 
 
-def _search_lddc_in_process(repo_path: Path, keyword: str) -> Optional[tuple[str, str]]:
-    collected = _collect_lddc_results_in_process(repo_path, keyword, max_candidates=1)
-    return collected[0] if collected else None
-
-
 def search_lddc_word_lyrics(title: str, artist: Optional[str] = None) -> Optional[LyricsResult]:
-    """尝试通过本地 LDDC 仓库检索逐字歌词。"""
+    """尝试通过本地 LDDC 仓库检索逐字歌词，按匹配度排序取最佳。"""
     repo_path = _resolve_lddc_repo_path()
     if not repo_path.exists():
         logger.debug("LDDC 仓库不存在，跳过: %s", repo_path)
@@ -214,16 +302,27 @@ def search_lddc_word_lyrics(title: str, artist: Optional[str] = None) -> Optiona
 
     keyword = f"{title} {artist or ''}".strip()
     try:
-        result = _search_lddc_in_process(repo_path, keyword)
+        results = _collect_lddc_results_in_process(repo_path, keyword, max_candidates=8)
     except Exception:
         logger.exception("LDDC 搜索执行失败")
         return None
 
-    if not result:
+    if not results:
         return None
 
-    content, source = result
-    return LyricsResult(content=content, source=source, synced=True)
+    # 按评分排序，取最高分
+    scored = []
+    for content, source, st_title, st_artist in results:
+        score = _score_candidate(st_title, st_artist, title, artist, source, content)
+        scored.append((score, content, source))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    best_score, best_content, best_source = scored[0]
+    logger.info(
+        "LDDC 最佳匹配: %s - %s (score=%.1f, source=%s)",
+        title, artist, best_score, best_source,
+    )
+    return LyricsResult(content=best_content, source=best_source, synced=True)
 
 
 def search_lddc_candidates(
@@ -238,16 +337,29 @@ def search_lddc_candidates(
 
     keyword = f"{title} {artist or ''}".strip()
     try:
-        raw_results = _collect_lddc_results_in_process(repo_path, keyword, max_candidates=limit)
+        raw_results = _collect_lddc_results_in_process(repo_path, keyword, max_candidates=limit * 2)
     except Exception:
         logger.exception("LDDC 候选搜索执行失败")
         return []
 
+    # 评分排序
+    scored: list[tuple[float, str, str, str, str]] = []
+    for content, source, st_title, st_artist in raw_results:
+        score = _score_candidate(st_title, st_artist, title, artist, source, content)
+        scored.append((score, content, source, st_title, st_artist))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
     candidates = [
-        LDDCCandidate(content=content, source=source, synced=True)
-        for content, source in raw_results
+        LDDCCandidate(
+            content=content,
+            source=source,
+            synced=True,
+            song_title=st_title,
+            song_artist=st_artist,
+        )
+        for score, content, source, st_title, st_artist in scored[:limit]
     ]
-    logger.info("LDDC 候选搜索完成: %s - %s, 命中 %d 条", title, artist, len(candidates))
+    logger.info("LDDC 候选搜索完成: %s - %s, 命中 %d 条（已排序）", title, artist, len(candidates))
     return candidates
 
 

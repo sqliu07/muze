@@ -76,6 +76,18 @@ export interface LyricsSearch {
 
 export interface LyricsUpdate {
   content: string
+  source?: string
+  synced?: boolean
+}
+
+export interface LyricsCandidate {
+  source: string
+  synced: boolean
+  word_level: boolean
+  preview: string
+  content: string
+  song_title: string
+  song_artist: string
 }
 
 export interface PlaylistCreate {

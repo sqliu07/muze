@@ -16,6 +16,7 @@ import type {
   LyricsOut,
   LyricsSearch,
   LyricsUpdate,
+  LyricsCandidate,
   WatchFolderOut,
   FolderAdd,
   ScanResult,
@@ -183,6 +184,19 @@ export interface LyricsStatus {
 
 export async function getLyricsStatus(): Promise<LyricsStatus> {
   const { data } = await api.get<LyricsStatus>('/lyrics/status')
+  return data
+}
+
+export async function searchLddcCandidates(
+  trackId: number,
+  payload: LyricsSearch,
+  limit = 8
+): Promise<LyricsCandidate[]> {
+  const { data } = await api.post<LyricsCandidate[]>(
+    `/lyrics/${trackId}/search/lddc-candidates`,
+    payload,
+    { params: { limit } }
+  )
   return data
 }
 
