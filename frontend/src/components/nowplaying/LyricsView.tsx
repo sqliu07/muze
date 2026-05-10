@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import useLyricSync from "@/hooks/useLyricSync"
 import { getAudioCurrentTime } from "@/hooks/useAudio"
 import type { LyricsOut } from "@/types/api"
@@ -38,7 +38,7 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
     total: number
   } | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (lastLineIndexRef.current !== currentIndex) {
       lastLineIndexRef.current = currentIndex
       targetProgressRef.current = 0
