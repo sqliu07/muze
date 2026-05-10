@@ -26,9 +26,14 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'muze-ui',
+      partialize: (state) => ({
+        theme: state.theme,
+        sidebarOpen: state.sidebarOpen,
+      }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           applyTheme(state.theme)
+          state.nowPlayingOpen = false
         }
       },
     }
