@@ -38,6 +38,9 @@ def test_scan_folder(client, tmp_dir: Path):
     """POST /api/library/scan 扫描目录并返回 added >= 1。"""
     create_minimal_mp3(tmp_dir / "song.mp3")
 
+    # 先添加 WatchFolder，满足路径白名单校验
+    client.post("/api/library/folders", json={"path": str(tmp_dir)})
+
     resp = client.post("/api/library/scan", json={"path": str(tmp_dir)})
     assert resp.status_code == 200
     data = resp.json()

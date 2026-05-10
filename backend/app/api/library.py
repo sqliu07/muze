@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import COVERS_DIR, LOGS_DIR
@@ -70,13 +71,13 @@ def add_watch_folder(body: FolderAdd, db: Session = Depends(get_db)):
             folder.active = True
             db.commit()
             db.refresh(folder)
-        return WatchFolderOut.from_orm(folder).dict()
+        return WatchFolderOut.model_validate(folder).model_dump()
 
     folder = WatchFolder(path=body.path)
     db.add(folder)
     db.commit()
     db.refresh(folder)
-    return WatchFolderOut.from_orm(folder).dict()
+    return WatchFolderOut.model_validate(folder).model_dump()
 
 
 @router.post("/folders/batch", response_model=list[WatchFolderOut])
@@ -97,7 +98,7 @@ def add_watch_folders_batch(body: BatchFolderAdd, db: Session = Depends(get_db))
             db.add(folder)
             db.commit()
             db.refresh(folder)
-        results.append(WatchFolderOut.from_orm(folder).dict())
+        results.append(WatchFolderOut.model_validate(folder).model_dump())
     return results
 
 
@@ -105,7 +106,7 @@ def add_watch_folders_batch(body: BatchFolderAdd, db: Session = Depends(get_db))
 def list_watch_folders(db: Session = Depends(get_db)):
     """列出活跃的监听目录。"""
     folders = db.query(WatchFolder).filter_by(active=True).all()
-    return [WatchFolderOut.from_orm(f).dict() for f in folders]
+    return [WatchFolderOut.model_validate(f).model_dump() for f in folders]
 
 
 @router.delete("/folders/{folder_id}")
@@ -124,6 +125,19 @@ def scan_folder(body: ScanRequest, db: Session = Depends(get_db)):
     """扫描单个目录。"""
     if not os.path.isdir(body.path):
         raise HTTPException(status_code=400, detail="目录不存在")
+
+    # 路径白名单校验：扫描路径必须与某个 active WatchFolder 存在前缀关系
+    scan_path = os.path.realpath(body.path)
+    active_folders = db.query(WatchFolder).filter_by(active=True).all()
+    allowed = False
+    for folder in active_folders:
+        folder_path = os.path.realpath(folder.path)
+        # 双向前缀匹配：精确匹配、子目录扫描、父目录扫描
+        if scan_path == folder_path or scan_path.startswith(folder_path + os.sep) or folder_path.startswith(scan_path + os.sep):
+            allowed = True
+            break
+    if not allowed:
+        raise HTTPException(status_code=403, detail="请先将该目录添加到媒体库")
 
     covers_dir = str(COVERS_DIR)
     result = scan_directory(body.path, db, covers_dir)
