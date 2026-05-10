@@ -116,6 +116,8 @@ class LyricsOut(BaseModel):
     source: Optional[str] = None
     content: Optional[str] = None
     synced: bool = False
+    original_content: Optional[str] = None
+    original_source: Optional[str] = None
     updated_at: datetime
 
     class Config:
