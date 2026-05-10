@@ -22,14 +22,22 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _save_lyrics(
-    db: Session, track_id: int, result: LyricsResult
+    db: Session,
+    track_id: int,
+    result: LyricsResult,
+    *,
+    preserve_original: bool = True,
 ) -> Lyrics:
-    """将 LyricsResult 保存或更新到数据库。"""
+    """保存或更新歌词。preserve_original=True 时保留 original_* 字段。"""
     lyrics = db.query(Lyrics).filter_by(track_id=track_id).first()
     if lyrics:
         lyrics.content = result.content
         lyrics.source = result.source
         lyrics.synced = result.synced
+        # 仅在不保留且来源为本地文件时才覆盖 original_* 字段
+        if not preserve_original and result.source in ("embedded", "lrc"):
+            lyrics.original_content = result.content
+            lyrics.original_source = result.source
     else:
         lyrics = Lyrics(
             track_id=track_id,
@@ -37,6 +45,9 @@ def _save_lyrics(
             source=result.source,
             synced=result.synced,
         )
+        if result.source in ("embedded", "lrc"):
+            lyrics.original_content = result.content
+            lyrics.original_source = result.source
         db.add(lyrics)
     db.commit()
     db.refresh(lyrics)
@@ -145,6 +156,12 @@ def search_track_lyrics(
                     "preview": (result.content or "")[:240],
                 },
             )
+        # 覆盖前自动备份原始歌词
+        existing = db.query(Lyrics).filter_by(track_id=track_id).first()
+        if existing and not existing.original_content and existing.source in ("embedded", "lrc"):
+            existing.original_content = existing.content
+            existing.original_source = existing.source
+            db.commit()
         return _save_lyrics(db, track_id, result)
 
     raise HTTPException(status_code=404, detail="未找到歌词")
