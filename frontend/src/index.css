@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 渐变色块背景 — 可动画的自定义属性 */
+@property --gc1 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: rgb(45, 45, 45);
+}
+@property --gc2 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: rgb(30, 30, 30);
+}
+@property --gc3 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: rgb(60, 60, 60);
+}
+
+.nowplaying-color-bg {
+  transition: --gc1 1.8s ease-in-out, --gc2 1.8s ease-in-out, --gc3 1.8s ease-in-out;
+  background: radial-gradient(ellipse at 20% 50%, var(--gc1), transparent 60%),
+              radial-gradient(ellipse at 80% 20%, var(--gc2), transparent 55%),
+              radial-gradient(ellipse at 50% 90%, var(--gc3), transparent 50%),
+              linear-gradient(135deg, var(--gc1), var(--gc2));
+}
+
+/* 色块漂移由 JS requestAnimationFrame 驱动，此处仅保留 @property 定义 */
+
+
 @layer base {
   /* ===== Light (default) ===== */
   :root,

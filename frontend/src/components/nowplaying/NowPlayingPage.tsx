@@ -11,11 +11,12 @@ import {
 } from "lucide-react"
 import { usePlayerStore, currentTrackSelector } from "@/store/playerStore"
 import { useUIStore } from "@/store/uiStore"
-import { useLyrics, useSearchLyrics, useRestoreLyrics, useSaveLyrics } from "@/api/hooks/useLyrics"
+import { useLyrics, useSearchLyrics, useRestoreLyrics, useSaveLyrics, useSearchLddcCandidates } from "@/api/hooks/useLyrics"
 import { useToggleFavorite } from "@/api/hooks/useFavorites"
 import { usePlaylists, useAddTracksToPlaylist } from "@/api/hooks/usePlaylists"
 import { seekAudio } from "@/hooks/useAudio"
 import { getTrackCoverUrl } from "@/api/client"
+import type { LyricsCandidate } from "@/types/api"
 import { useColorThief } from "@/hooks/useColorThief"
 import CoverArt from "./CoverArt"
 import LyricsView from "./LyricsView"
@@ -130,6 +131,14 @@ function NowPlayingPage() {
   const [searchFeedback, setSearchFeedback] = useState<string | null>(null)
   const feedbackTimerRef = useRef<number | null>(null)
   const prefersReducedMotion = useReducedMotion()
+  const [customSearchOpen, setCustomSearchOpen] = useState(false)
+  const [customTitle, setCustomTitle] = useState("")
+  const [customArtist, setCustomArtist] = useState("")
+  const [driftIntensity, setDriftIntensity] = useState(1)
+  const [candidatesOpen, setCandidatesOpen] = useState(false)
+  const [candidates, setCandidates] = useState<LyricsCandidate[]>([])
+  const [candidatesLoading, setCandidatesLoading] = useState(false)
+  const searchLddcMutation = useSearchLddcCandidates()
 
   const { data: lyrics } = useLyrics(currentTrack?.id ?? 0)
   const { data: playlists } = usePlaylists()
@@ -143,50 +152,73 @@ function NowPlayingPage() {
 
   const coverUrl = currentTrack?.has_cover ? getTrackCoverUrl(currentTrack.id) : null
   const colors = useColorThief(coverUrl)
+  const colorBgRef = useRef<HTMLDivElement>(null)
+  const driftRefA = useRef<HTMLDivElement>(null)
+  const driftRefB = useRef<HTMLDivElement>(null)
+  const driftRefC = useRef<HTMLDivElement>(null)
 
-  // 封面交叉淡入淡出状态
-  const [coverLayers, setCoverLayers] = useState<{
-    current: string | null
-    next: string | null
-    showNext: boolean
-  }>({ current: null, next: null, showNext: false })
-  const fadeTimeoutRef = useRef<number | null>(null)
-
+  // 更新渐变色块背景的 CSS 自定义属性
   useEffect(() => {
-    let cancelled = false
-    if (!coverUrl) {
-      setCoverLayers({ current: null, next: null, showNext: false })
-      return
-    }
-    if (coverLayers.current === null) {
-      setCoverLayers({ current: coverUrl, next: null, showNext: false })
-      return
-    }
-    if (coverUrl === coverLayers.current) return
-    // 预加载新封面，然后触发交叉淡入淡出
-    const img = new Image()
-    img.crossOrigin = "anonymous"
-    img.onload = () => {
-      if (cancelled) return
-      setCoverLayers((prev) => ({ ...prev, next: coverUrl, showNext: true }))
-      fadeTimeoutRef.current = window.setTimeout(() => {
-        if (cancelled) return
-        setCoverLayers({ current: coverUrl, next: null, showNext: false })
-      }, 1300)
-    }
-    img.src = coverUrl
-    return () => {
-      cancelled = true
-      if (fadeTimeoutRef.current !== null) {
-        window.clearTimeout(fadeTimeoutRef.current)
-      }
-    }
-  }, [coverUrl])
+    const el = colorBgRef.current
+    if (!el) return
+    el.style.setProperty("--gc1", `rgb(${colors[0].join(",")})`)
+    el.style.setProperty("--gc2", `rgb(${colors[1].join(",")})`)
+    el.style.setProperty("--gc3", `rgb(${colors[2].join(",")})`)
+  }, [colors])
 
-  const bg = `linear-gradient(135deg, rgb(${colors[0].join(",")}) 0%, rgb(${colors[1].join(",")}) 50%, rgb(${colors[2].join(",")}) 100%)`
-  const orbAColor = `rgba(${colors[0].join(",")}, 0.08)`
-  const orbBColor = `rgba(${colors[2].join(",")}, 0.1)`
-  const orbCColor = `rgba(${colors[1].join(",")}, 0.08)`
+  // 用 Web Animations API 驱动色块漂移 — 绕过 framer-motion 对 transform 的管理
+  useEffect(() => {
+    if (driftIntensity <= 0) return
+    const refs = [driftRefA, driftRefB, driftRefC]
+    const vw = window.innerWidth / 100
+    const vh = window.innerHeight / 100
+    const cfg = [
+      { dur: 22000, ax: 8 * vw, ay: 5 * vh, as: 0.06, sx: 0.43, sy: 0.31 },
+      { dur: 28000, ax: 7 * vw, ay: 6 * vh, as: 0.05, sx: 0.37, sy: 0.29 },
+      { dur: 25000, ax: 7.5 * vw, ay: 4.5 * vh, as: 0.07, sx: 0.41, sy: 0.34 },
+    ]
+    const anims: Animation[] = []
+    refs.forEach((ref, i) => {
+      const el = ref.current
+      if (!el) return
+      const c = cfg[i]
+      // 生成 20 帧关键帧，模拟多频率叠加的准随机漂移
+      const frames: Keyframe[] = []
+      const steps = 20
+      for (let f = 0; f <= steps; f++) {
+        const t = (f / steps) * Math.PI * 2
+        const dx = (
+          Math.sin(t) * 1.0 +
+          Math.sin(t * c.sx) * 0.6 +
+          Math.sin(t * 0.19) * 0.3
+        ) * c.ax * driftIntensity / 1.9
+        const dy = (
+          Math.cos(t * c.sy) * 1.0 +
+          Math.cos(t * 0.17) * 0.5 +
+          Math.cos(t * 0.07) * 0.35
+        ) * c.ay * driftIntensity / 1.85
+        const sc = 1 + (
+          Math.sin(t * 0.11) * 0.6 +
+          Math.sin(t * 0.23) * 0.4
+        ) * c.as * driftIntensity / 1.0
+        frames.push({
+          transform: `translate(${dx}px, ${dy}px) scale(${sc})`,
+          offset: f / steps,
+        })
+      }
+      const anim = el.animate(frames, {
+        duration: c.dur,
+        iterations: Infinity,
+        easing: "linear",
+      })
+      anims.push(anim)
+    })
+    return () => anims.forEach((a) => a.cancel())
+  }, [driftIntensity])
+
+  const orbAColor = `rgba(${colors[0].join(",")}, 0.3)`
+  const orbBColor = `rgba(${colors[2].join(",")}, 0.35)`
+  const orbCColor = `rgba(${colors[1].join(",")}, 0.25)`
   const hasSearchedOnline = Boolean(
     lyrics?.source &&
     !["embedded", "lrc", "manual"].includes(lyrics.source)
@@ -373,6 +405,18 @@ function NowPlayingPage() {
               ? "已搜索（点击重搜）"
               : "联网搜词"}
         </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(e) => e.preventDefault()}
+          onClick={() => {
+            setCustomTitle(currentTrack?.title ?? "")
+            setCustomArtist(currentTrack?.artist?.name ?? "")
+            setCustomSearchOpen(true)
+          }}
+          disabled={!currentTrack}
+          className="focus:bg-white/10 focus:text-white"
+        >
+          指定搜索
+        </DropdownMenuItem>
         {canRestoreOriginal && (
           <DropdownMenuItem
             onSelect={(e) => e.preventDefault()}
@@ -390,6 +434,22 @@ function NowPlayingPage() {
         >
           手动粘贴歌词
         </DropdownMenuItem>
+        <DropdownMenuSeparator className="bg-white/10" />
+        <div className="px-3 py-2">
+          <div className="flex items-center justify-between text-xs text-white/60">
+            <span>背景动效</span>
+            <span>{driftIntensity === 0 ? "关" : `${Math.round(driftIntensity * 100)}%`}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={2}
+            step={0.25}
+            value={driftIntensity}
+            onChange={(e) => setDriftIntensity(Number(e.target.value))}
+            className="mt-1 w-full accent-white/80"
+          />
+        </div>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
           onSelect={(e) => e.preventDefault()}
@@ -414,75 +474,70 @@ function NowPlayingPage() {
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="fixed inset-0 z-50 flex flex-col overflow-hidden"
         >
-          {/* L1: 封面模糊背景 + 交叉淡入淡出 */}
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            {coverLayers.current && (
-              <img
-                src={coverLayers.current}
-                alt=""
-                className="absolute h-[140%] w-[140%] object-cover"
-                style={{
-                  top: "-20%", left: "-20%",
-                  filter: "blur(80px) saturate(1.5)",
-                  opacity: coverLayers.showNext ? 0 : 1,
-                  transition: "opacity 1.2s ease-in-out",
-                }}
-              />
-            )}
-            {coverLayers.next && (
-              <img
-                src={coverLayers.next}
-                alt=""
-                className="absolute h-[140%] w-[140%] object-cover"
-                style={{
-                  top: "-20%", left: "-20%",
-                  filter: "blur(80px) saturate(1.5)",
-                  opacity: coverLayers.showNext ? 1 : 0,
-                  transition: "opacity 1.2s ease-in-out",
-                }}
-              />
-            )}
-            {!coverLayers.current && !coverLayers.next && (
-              <div className="absolute inset-0" style={{ background: bg }} />
-            )}
+          {/* L0: 纯色底（不透明） */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ backgroundColor: "rgb(12, 12, 12)" }}
+          />
+
+          {/* L1: 色块渐变背景（从封面提取主色，3 层独立漂移） */}
+          <div ref={colorBgRef} className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div
+              ref={driftRefA}
+              className="absolute inset-[-30%]"
+              style={{
+                background: "radial-gradient(ellipse at 30% 40%, var(--gc1) 0%, color-mix(in srgb, var(--gc1), transparent 40%) 35%, color-mix(in srgb, var(--gc1), transparent 75%) 60%, transparent 85%)",
+                willChange: "transform",
+              }}
+            />
+            <div
+              ref={driftRefB}
+              className="absolute inset-[-30%]"
+              style={{
+                background: "radial-gradient(ellipse at 70% 25%, var(--gc2) 0%, color-mix(in srgb, var(--gc2), transparent 40%) 30%, color-mix(in srgb, var(--gc2), transparent 75%) 55%, transparent 80%)",
+                willChange: "transform",
+              }}
+            />
+            <div
+              ref={driftRefC}
+              className="absolute inset-[-30%]"
+              style={{
+                background: "radial-gradient(ellipse at 45% 80%, var(--gc3) 0%, color-mix(in srgb, var(--gc3), transparent 45%) 32%, color-mix(in srgb, var(--gc3), transparent 78%) 58%, transparent 82%)",
+                willChange: "transform",
+              }}
+            />
           </div>
 
           {/* L2: 暗色覆盖层 */}
           <div
             className="pointer-events-none absolute inset-0"
-            style={{ background: "rgba(0,0,0,0.35)" }}
+            style={{ background: "rgba(0,0,0,0.05)" }}
           />
 
-          {/* L3: 颜色渐变覆盖层 */}
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{ background: bg, opacity: 0.35 }}
-          />
-
-          {/* L4: 光晕 */}
+          {/* L3: 色块光晕 */}
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div
-              className={`absolute left-[6vmin] top-[8vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-a"}`}
+              className={`absolute left-[-10vmin] top-[-10vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-a"}`}
               style={{
-                width: "40vmin", height: "40vmin",
+                width: "60vmin", height: "60vmin",
                 backgroundColor: orbAColor, borderRadius: "50%",
-                filter: "blur(60px)", willChange: "transform, opacity",
+                filter: "blur(100px)", willChange: "transform, opacity",
               }}
             />
             <div
-              className={`absolute right-[8vmin] top-[16vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-b"}`}
+              className={`absolute right-[-8vmin] top-[5vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-b"}`}
               style={{
-                width: "34vmin", height: "34vmin",
+                width: "55vmin", height: "55vmin",
                 backgroundColor: orbBColor, borderRadius: "50%",
-                filter: "blur(60px)", willChange: "transform, opacity",
+                filter: "blur(100px)", willChange: "transform, opacity",
               }}
             />
             <div
-              className={`absolute left-[22vmin] bottom-[6vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-c"}`}
+              className={`absolute bottom-[-12vmin] left-[10vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-c"}`}
               style={{
-                width: "42vmin", height: "42vmin",
+                width: "65vmin", height: "65vmin",
                 backgroundColor: orbCColor, borderRadius: "50%",
-                filter: "blur(60px)", willChange: "transform, opacity",
+                filter: "blur(100px)", willChange: "transform, opacity",
               }}
             />
           </div>
@@ -824,6 +879,145 @@ function NowPlayingPage() {
                   className="rounded-md bg-white px-3 py-2 text-sm text-black transition-colors hover:bg-white/90 disabled:opacity-60"
                 >
                   保存
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 指定搜索弹窗 */}
+          <Dialog open={customSearchOpen} onOpenChange={setCustomSearchOpen}>
+            <DialogContent className="border-white/15 bg-black/80 text-white backdrop-blur-xl">
+              <DialogHeader>
+                <DialogTitle>指定搜索歌词</DialogTitle>
+                <DialogDescription className="text-white/60">
+                  手动指定歌名和歌手进行搜索
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs text-white/50">歌名</label>
+                  <input
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                    className="w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                    placeholder="歌曲名称"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-white/50">歌手</label>
+                  <input
+                    value={customArtist}
+                    onChange={(e) => setCustomArtist(e.target.value)}
+                    className="w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                    placeholder="歌手名称（可选）"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <button
+                  onClick={() => setCustomSearchOpen(false)}
+                  className="rounded-md border border-white/20 px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    if (!customTitle.trim() || !currentTrack) return
+                    setCustomSearchOpen(false)
+                    setCandidatesLoading(true)
+                    setTransientFeedback(`正在搜索「${customTitle.trim()}」...`, 0)
+                    searchLddcMutation
+                      .mutateAsync({
+                        trackId: currentTrack.id,
+                        payload: {
+                          title: customTitle.trim(),
+                          artist: customArtist.trim() || undefined,
+                        },
+                        limit: 8,
+                      })
+                      .then((result) => {
+                        if (result.length === 0) {
+                          setTransientFeedback("未找到匹配歌词，请换个关键词试试")
+                          return
+                        }
+                        setCandidates(result)
+                        setCandidatesOpen(true)
+                        setTransientFeedback(`找到 ${result.length} 个候选，请选择`)
+                      })
+                      .catch(() => {
+                        setTransientFeedback("搜索失败，请稍后重试")
+                      })
+                      .finally(() => setCandidatesLoading(false))
+                  }}
+                  disabled={!customTitle.trim() || candidatesLoading}
+                  className="rounded-md bg-white px-3 py-2 text-sm text-black transition-colors hover:bg-white/90 disabled:opacity-60"
+                >
+                  搜索
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* LDDC 候选歌词选择弹窗 */}
+          <Dialog open={candidatesOpen} onOpenChange={setCandidatesOpen}>
+            <DialogContent className="border-white/15 bg-black/80 text-white backdrop-blur-xl max-w-lg">
+              <DialogHeader>
+                <DialogTitle>选择歌词</DialogTitle>
+                <DialogDescription className="text-white/60">
+                  找到 {candidates.length} 个候选，点击选择要使用的歌词
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {candidates.map((c, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      if (!currentTrack) return
+                      setCandidatesOpen(false)
+                      saveLyricsMutation
+                        .mutateAsync({
+                          trackId: currentTrack.id,
+                          payload: {
+                            content: c.content,
+                            source: c.source,
+                            synced: c.synced,
+                          },
+                        })
+                        .then(() => setTransientFeedback("已应用所选歌词"))
+                        .catch(() => setTransientFeedback("保存失败，请重试"))
+                    }}
+                    className="w-full rounded-md border border-white/10 bg-white/5 p-3 text-left transition-colors hover:bg-white/10"
+                  >
+                    {(c.song_title || c.song_artist) && (
+                      <p className="mb-1.5 text-sm font-medium text-white/80 truncate">
+                        {c.song_title}{c.song_artist ? ` — ${c.song_artist}` : ""}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="rounded bg-white/10 px-1.5 py-0.5">{c.source}</span>
+                      {c.word_level && (
+                        <span className="rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">逐字</span>
+                      )}
+                      {c.synced && !c.word_level && (
+                        <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-blue-400">逐行</span>
+                      )}
+                      {!c.synced && (
+                        <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/50">纯文本</span>
+                      )}
+                      {/live|现场|演唱会/i.test(`${c.song_title} ${c.song_artist}`) && (
+                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-red-400">LIVE</span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-white/50 whitespace-pre-wrap line-clamp-4">{c.preview}</p>
+                  </button>
+                ))}
+              </div>
+              <DialogFooter>
+                <button
+                  onClick={() => setCandidatesOpen(false)}
+                  className="rounded-md border border-white/20 px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"
+                >
+                  取消
                 </button>
               </DialogFooter>
             </DialogContent>
