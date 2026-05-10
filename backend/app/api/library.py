@@ -110,13 +110,27 @@ def list_watch_folders(db: Session = Depends(get_db)):
 
 @router.delete("/folders/{folder_id}")
 def remove_watch_folder(folder_id: int, db: Session = Depends(get_db)):
-    """停用目录（soft delete）。"""
+    """删除目录及其扫描的歌曲。"""
     folder = db.query(WatchFolder).filter_by(id=folder_id).first()
     if not folder:
         raise HTTPException(status_code=404, detail="目录不存在")
-    folder.active = False
+
+    prefix = folder.path.rstrip(os.sep) + os.sep
+    track_ids = [
+        t.id for t in db.query(Track)
+        .filter(Track.file_path.startswith(prefix))
+        .all()
+    ]
+
+    if track_ids:
+        db.query(Favorite).filter(Favorite.track_id.in_(track_ids)).delete(synchronize_session=False)
+        db.query(PlaylistTrack).filter(PlaylistTrack.track_id.in_(track_ids)).delete(synchronize_session=False)
+        db.query(Lyrics).filter(Lyrics.track_id.in_(track_ids)).delete(synchronize_session=False)
+        db.query(Track).filter(Track.id.in_(track_ids)).delete(synchronize_session=False)
+
+    db.delete(folder)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "removed_tracks": len(track_ids)}
 
 
 @router.post("/scan", response_model=ScanResult)
