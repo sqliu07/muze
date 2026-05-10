@@ -113,7 +113,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
+    # 公共根目录文件（favicon、manifest 等）
+    _KNOWN_STATIC = {p.name for p in STATIC_DIR.iterdir() if p.is_file()}
+
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str, request: Request):
-        """SPA fallback — 所有非 /api 路由返回 index.html。"""
+        """静态文件优先，其余返回 index.html（SPA fallback）。"""
+        if full_path in _KNOWN_STATIC:
+            return FileResponse(STATIC_DIR / full_path)
         return FileResponse(STATIC_DIR / "index.html")

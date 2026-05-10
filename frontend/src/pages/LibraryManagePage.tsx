@@ -52,6 +52,12 @@ export default function LibraryManagePage() {
     setFolders(data)
   }
 
+  function invalidateLibrary() {
+    queryClient.invalidateQueries({ queryKey: ['tracks'] })
+    queryClient.invalidateQueries({ queryKey: ['albums'] })
+    queryClient.invalidateQueries({ queryKey: ['artists'] })
+  }
+
   async function handlePickerConfirm(paths: string[]) {
     if (paths.length === 0) return
     await addFoldersBatch(paths)
@@ -68,6 +74,7 @@ export default function LibraryManagePage() {
     try {
       const res = await scanLibrary(path)
       setResult(res)
+      invalidateLibrary()
     } finally {
       setScanning(false)
     }
@@ -79,6 +86,7 @@ export default function LibraryManagePage() {
     try {
       const res = await refreshLibrary()
       setResult(res)
+      invalidateLibrary()
     } finally {
       setScanning(false)
     }
@@ -89,9 +97,7 @@ export default function LibraryManagePage() {
     await clearLibrary()
     await loadFolders()
     setResult(null)
-    queryClient.invalidateQueries({ queryKey: ['tracks'] })
-    queryClient.invalidateQueries({ queryKey: ['albums'] })
-    queryClient.invalidateQueries({ queryKey: ['artists'] })
+    invalidateLibrary()
   }
 
   async function handleRemove(id: number) {
