@@ -148,4 +148,4 @@ def get_album_cover(album_id: int, db: Session = Depends(get_db)):
     if not cover_file.exists():
         raise HTTPException(status_code=404, detail="封面文件不存在")
 
-    return FileResponse(str(cover_file), media_type="image/jpeg")
+    return FileResponse(str(cover_file), media_type="image/jpeg", headers={"Cache-Control": "no-cache"})

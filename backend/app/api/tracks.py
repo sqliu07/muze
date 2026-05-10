@@ -194,14 +194,13 @@ def get_track_cover(track_id: int, db: Session = Depends(get_db)):
         if album and album.cover_path:
             cover_file = COVERS_DIR / album.cover_path
             if cover_file.exists():
-                return FileResponse(str(cover_file), media_type="image/jpeg")
+                return FileResponse(
+                    str(cover_file),
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "no-cache"},
+                )
 
     raise HTTPException(status_code=404, detail="封面不存在")
-
-    if not cover_path.exists():
-        raise HTTPException(status_code=404, detail="封面不存在")
-
-    return FileResponse(str(cover_path), media_type="image/jpeg")
 
 
 @router.patch("/{track_id}", response_model=TrackOut)
