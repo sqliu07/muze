@@ -226,12 +226,11 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
           <AnimatePresence initial={false}>
             {preludeInterlude && (
               <motion.div
-                key="prelude-interlude"
+                key={`prelude-${lyrics?.id ?? "none"}`}
                 className="pointer-events-none absolute left-8 top-[calc(14vh+4px)] z-10 flex h-[92px] w-[calc(100%-4rem)] items-center justify-start"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
+                exit={{ opacity: 0, transition: { duration: 0 } }}
               >
                 <div className="nowplaying-interlude-breathe relative inline-block whitespace-nowrap text-[2.3rem] font-extrabold leading-none tracking-[0.18em]">
                   {[0, 1, 2].map((dotIndex) => {
@@ -359,12 +358,11 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
                       interludeAfterIndex === index &&
                       currentLineProgress >= 0.9995 && (
                       <motion.div
-                        key={`interlude-${index}`}
+                        key={`interlude-${lyrics?.id ?? "x"}-${index}`}
                         className="pointer-events-none flex h-[92px] w-full items-center justify-start"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        exit={{ opacity: 0, transition: { duration: 0 } }}
                       >
                         <div className="nowplaying-interlude-breathe relative inline-block whitespace-nowrap text-[2.3rem] font-extrabold leading-none tracking-[0.18em]">
                           {[0, 1, 2].map((dotIndex) => {
