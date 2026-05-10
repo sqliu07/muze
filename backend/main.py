@@ -48,6 +48,10 @@ async def lifespan(_app: FastAPI):
     if paths:
         start_watcher(paths, loop, manager.broadcast)
 
+    # 启动歌词守护进程
+    from app.services.lyrics_daemon import start_lyrics_daemon
+    start_lyrics_daemon()
+
     yield
 
     # 关闭时：停止监听
