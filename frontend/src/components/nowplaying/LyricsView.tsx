@@ -27,6 +27,7 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
   const velocityRef = useRef(0)
   const lastTsRef = useRef<number | null>(null)
   const lastLineIndexRef = useRef(-1)
+  const lastLyricsIdRef = useRef<number | null>(null)
   const wordLiftRefs = useRef<HTMLSpanElement[]>([])
   const wordBaseLiftRefs = useRef<HTMLSpanElement[]>([])
   const timingRef = useRef<{
@@ -93,6 +94,15 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
   useEffect(() => {
     let raf: number | null = null
     const tick = (ts: number) => {
+      // 切歌时重置动画状态，避免累积延迟
+      const currentLyricsId = lyrics?.id ?? null
+      if (currentLyricsId !== lastLyricsIdRef.current) {
+        lastLyricsIdRef.current = currentLyricsId
+        displayedProgressRef.current = 0
+        velocityRef.current = 0
+        lastTsRef.current = null
+      }
+
       const el = activeFillRef.current
       const timing = timingRef.current
       if (timing) {

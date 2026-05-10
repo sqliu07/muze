@@ -56,6 +56,9 @@ export default function LibraryManagePage() {
     queryClient.invalidateQueries({ queryKey: ['tracks'] })
     queryClient.invalidateQueries({ queryKey: ['albums'] })
     queryClient.invalidateQueries({ queryKey: ['artists'] })
+    queryClient.refetchQueries({ queryKey: ['tracks'] })
+    queryClient.refetchQueries({ queryKey: ['albums'] })
+    queryClient.refetchQueries({ queryKey: ['artists'] })
   }
 
   async function handlePickerConfirm(paths: string[]) {
