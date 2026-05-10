@@ -179,7 +179,7 @@ function NowPlayingPage() {
   const bg = `linear-gradient(135deg, rgb(${colors[0].join(",")}) 0%, rgb(${colors[1].join(",")}) 50%, rgb(${colors[2].join(",")}) 100%)`
   const orbAColor = `rgba(${colors[0].join(",")}, 0.08)`
   const orbBColor = `rgba(${colors[2].join(",")}, 0.1)`
-  const orbCColor = `rgba(${colors[1].join(",")}, 0.06)`
+  const orbCColor = `rgba(${colors[1].join(",")}, 0.08)`
   const hasSearchedOnline = Boolean(
     lyrics?.source &&
     !["embedded", "lrc", "manual"].includes(lyrics.source)
