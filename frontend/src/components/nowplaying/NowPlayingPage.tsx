@@ -150,6 +150,7 @@ function NowPlayingPage() {
   const fadeTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     if (!coverUrl) {
       setCoverLayers({ current: null, next: null, showNext: false })
       return
@@ -163,13 +164,16 @@ function NowPlayingPage() {
     const img = new Image()
     img.crossOrigin = "anonymous"
     img.onload = () => {
+      if (cancelled) return
       setCoverLayers((prev) => ({ ...prev, next: coverUrl, showNext: true }))
       fadeTimeoutRef.current = window.setTimeout(() => {
+        if (cancelled) return
         setCoverLayers({ current: coverUrl, next: null, showNext: false })
       }, 1300)
     }
     img.src = coverUrl
     return () => {
+      cancelled = true
       if (fadeTimeoutRef.current !== null) {
         window.clearTimeout(fadeTimeoutRef.current)
       }
