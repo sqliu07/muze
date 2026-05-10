@@ -88,6 +88,42 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
         return fallback
       })
       timingRef.current = { starts, ends, weights, revealStarts, total }
+
+      // 根据当前音频时间初始化进度，避免切换行时出现填充动画
+      const now = getAudioCurrentTime()
+      let initTarget = 0
+      if (now <= starts[0]) {
+        initTarget = 0
+      } else if (now >= ends[ends.length - 1]) {
+        initTarget = 1
+      } else {
+        let progressed = 0
+        for (let i = 0; i < starts.length; i += 1) {
+          const s = starts[i]
+          const e = Math.max(s + 0.05, ends[i])
+          const w = weights[i]
+          if (now >= e) {
+            progressed += w
+            continue
+          }
+          if (now <= s) break
+          const t = (now - s) / (e - s)
+          const smooth = t * t * (3 - 2 * t)
+          progressed += w * smooth
+          break
+        }
+        initTarget = Math.max(0, Math.min(1, progressed / total))
+      }
+      targetProgressRef.current = initTarget
+      displayedProgressRef.current = initTarget
+      velocityRef.current = 0
+      const el2 = activeFillRef.current
+      if (el2) {
+        const right = Math.max(0, (1 - initTarget) * 100)
+        const clip = `inset(0 ${right}% 0 0)`
+        el2.style.clipPath = clip
+        el2.style.setProperty("-webkit-clip-path", clip)
+      }
     }
   }, [currentIndex, lines])
 
