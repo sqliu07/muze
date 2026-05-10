@@ -457,6 +457,28 @@ def scan_file(
         existing.has_cover = cover_name is not None
         existing.file_missing = False
         db.flush()
+        # Auto-fetch lyrics for new/updated tracks
+        try:
+            from app.services.lyrics_service import get_lyrics
+            from app.models.models import Lyrics
+
+            existing_lyrics = db.query(Lyrics).filter_by(track_id=existing.id).first()
+            if not existing_lyrics:
+                artist_name = artist.name if artist else None
+                lyrics_result = get_lyrics(str(path), title_text, artist_name)
+                if lyrics_result:
+                    new_lyrics = Lyrics(
+                        track_id=existing.id,
+                        content=lyrics_result.content,
+                        source=lyrics_result.source,
+                        synced=lyrics_result.synced,
+                    )
+                    if lyrics_result.source in ("embedded", "lrc"):
+                        new_lyrics.original_content = lyrics_result.content
+                        new_lyrics.original_source = lyrics_result.source
+                    db.add(new_lyrics)
+        except Exception:
+            logger.exception("获取歌词失败: %s", path)
         return existing
 
     # 创建 Track
@@ -476,6 +498,28 @@ def scan_file(
     )
     db.add(track)
     db.flush()
+    # Auto-fetch lyrics for new/updated tracks
+    try:
+        from app.services.lyrics_service import get_lyrics
+        from app.models.models import Lyrics
+
+        existing_lyrics = db.query(Lyrics).filter_by(track_id=track.id).first()
+        if not existing_lyrics:
+            artist_name = artist.name if artist else None
+            lyrics_result = get_lyrics(str(path), title_text, artist_name)
+            if lyrics_result:
+                new_lyrics = Lyrics(
+                    track_id=track.id,
+                    content=lyrics_result.content,
+                    source=lyrics_result.source,
+                    synced=lyrics_result.synced,
+                )
+                if lyrics_result.source in ("embedded", "lrc"):
+                    new_lyrics.original_content = lyrics_result.content
+                    new_lyrics.original_source = lyrics_result.source
+                db.add(new_lyrics)
+    except Exception:
+        logger.exception("获取歌词失败: %s", path)
     return track
 
 
