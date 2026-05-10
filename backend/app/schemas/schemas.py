@@ -18,7 +18,7 @@ class ArtistOut(ArtistBase):
     cover_path: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ── Album ───────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ class AlbumOut(AlbumBase):
     total_tracks: int = 0
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class AlbumSummaryOut(AlbumBase):
@@ -48,7 +48,7 @@ class AlbumSummaryOut(AlbumBase):
     total_tracks: int = 0
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ── Track ───────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ class TrackOut(TrackBase):
     is_favorite: bool = False
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TrackUpdate(BaseModel):
@@ -121,7 +121,7 @@ class LyricsOut(BaseModel):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class LyricsSearch(BaseModel):
@@ -167,7 +167,7 @@ class PlaylistOut(BaseModel):
     track_count: int = 0
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PlaylistDetailOut(PlaylistOut):
@@ -197,7 +197,7 @@ class WatchFolderOut(BaseModel):
 
     class Config:
         from_attributes = True
-        orm_mode = True
+        from_attributes = True
 
 
 class ScanRequest(BaseModel):
@@ -234,4 +234,4 @@ class FavoriteOut(BaseModel):
     track: TrackOut
 
     class Config:
-        orm_mode = True
+        from_attributes = True
