@@ -94,6 +94,22 @@ def _save_search_cache(
     db.commit()
 
 
+@router.get("/status")
+def lyrics_search_status(db: Session = Depends(get_db)):
+    """返回逐字歌词搜索进度统计。"""
+    total = db.query(Lyrics).count()
+    synced_count = db.query(Lyrics).filter(Lyrics.synced == True).count()
+    has_original = db.query(Lyrics).filter(
+        Lyrics.original_content != None
+    ).count()
+    return {
+        "total": total,
+        "synced": synced_count,
+        "pending": total - synced_count,
+        "has_original": has_original,
+    }
+
+
 @router.get("/{track_id}", response_model=LyricsOut)
 def get_track_lyrics(track_id: int, db: Session = Depends(get_db)):
     """获取歌词。有缓存则返回，无则自动获取并保存。"""
@@ -212,6 +228,27 @@ def update_track_lyrics(
             synced=False,
         )
         db.add(lyrics)
+    db.commit()
+    db.refresh(lyrics)
+    return lyrics
+
+
+@router.post("/{track_id}/restore", response_model=LyricsOut)
+def restore_original_lyrics(track_id: int, db: Session = Depends(get_db)):
+    """恢复到原始歌词（内嵌/lrc）。"""
+    _get_track_or_404(track_id, db)
+    lyrics = db.query(Lyrics).filter_by(track_id=track_id).first()
+    if not lyrics or not lyrics.original_content:
+        raise HTTPException(status_code=404, detail="没有可恢复的原始歌词")
+
+    lyrics.content = lyrics.original_content
+    lyrics.source = lyrics.original_source or "embedded"
+    # lrc files may contain timestamps
+    lyrics.synced = bool(
+        lyrics.original_source == "lrc"
+        and lyrics.original_content
+        and "[" in lyrics.original_content
+    )
     db.commit()
     db.refresh(lyrics)
     return lyrics
