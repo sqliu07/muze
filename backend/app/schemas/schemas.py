@@ -195,7 +195,9 @@ class WatchFolderOut(BaseModel):
     last_scanned: Optional[datetime] = None
     active: bool = True
 
-    model_config = {"from_attributes": True}
+    class Config:
+        from_attributes = True
+        orm_mode = True
 
 
 class ScanRequest(BaseModel):

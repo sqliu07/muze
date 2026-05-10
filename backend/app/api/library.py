@@ -70,13 +70,13 @@ def add_watch_folder(body: FolderAdd, db: Session = Depends(get_db)):
             folder.active = True
             db.commit()
             db.refresh(folder)
-        return WatchFolderOut.model_validate(folder).model_dump()
+        return folder
 
     folder = WatchFolder(path=body.path)
     db.add(folder)
     db.commit()
     db.refresh(folder)
-    return WatchFolderOut.model_validate(folder).model_dump()
+    return folder
 
 
 @router.post("/folders/batch", response_model=list[WatchFolderOut])
@@ -97,7 +97,7 @@ def add_watch_folders_batch(body: BatchFolderAdd, db: Session = Depends(get_db))
             db.add(folder)
             db.commit()
             db.refresh(folder)
-        results.append(WatchFolderOut.model_validate(folder).model_dump())
+        results.append(folder)
     return results
 
 
@@ -105,7 +105,7 @@ def add_watch_folders_batch(body: BatchFolderAdd, db: Session = Depends(get_db))
 def list_watch_folders(db: Session = Depends(get_db)):
     """列出活跃的监听目录。"""
     folders = db.query(WatchFolder).filter_by(active=True).all()
-    return [WatchFolderOut.model_validate(f).model_dump() for f in folders]
+    return folders
 
 
 @router.delete("/folders/{folder_id}")
