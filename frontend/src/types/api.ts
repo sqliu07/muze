@@ -65,6 +65,8 @@ export interface LyricsOut {
   content: string | null
   synced: boolean
   updated_at: string
+  original_content: string | null
+  original_source: string | null
 }
 
 export interface LyricsSearch {

@@ -169,6 +169,23 @@ export async function saveLyrics(trackId: number, payload: LyricsUpdate): Promis
   return data
 }
 
+export async function restoreLyrics(trackId: number): Promise<LyricsOut> {
+  const { data } = await api.post<LyricsOut>(`/lyrics/${trackId}/restore`)
+  return data
+}
+
+export interface LyricsStatus {
+  total: number
+  synced: number
+  pending: number
+  has_original: number
+}
+
+export async function getLyricsStatus(): Promise<LyricsStatus> {
+  const { data } = await api.get<LyricsStatus>('/lyrics/status')
+  return data
+}
+
 // --- Library ---
 
 export async function scanLibrary(path: string): Promise<ScanResult> {
