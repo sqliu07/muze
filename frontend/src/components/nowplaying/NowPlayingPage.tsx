@@ -11,8 +11,7 @@ import {
 } from "lucide-react"
 import { usePlayerStore, currentTrackSelector } from "@/store/playerStore"
 import { useUIStore } from "@/store/uiStore"
-import { useLyrics } from "@/api/hooks/useLyrics"
-import { useSearchLyrics } from "@/api/hooks/useLyrics"
+import { useLyrics, useSearchLyrics, useRestoreLyrics, useSaveLyrics } from "@/api/hooks/useLyrics"
 import { useToggleFavorite } from "@/api/hooks/useFavorites"
 import { usePlaylists, useAddTracksToPlaylist } from "@/api/hooks/usePlaylists"
 import { seekAudio } from "@/hooks/useAudio"
@@ -137,6 +136,10 @@ function NowPlayingPage() {
   const searchLyricsMutation = useSearchLyrics()
   const addTracksToPlaylist = useAddTracksToPlaylist()
   const toggleFavorite = useToggleFavorite()
+  const restoreLyricsMutation = useRestoreLyrics()
+  const saveLyricsMutation = useSaveLyrics()
+  const [manualLyricsOpen, setManualLyricsOpen] = useState(false)
+  const [manualLyricsText, setManualLyricsText] = useState("")
 
   const coverUrl = currentTrack?.has_cover ? getTrackCoverUrl(currentTrack.id) : null
   const colors = useColorThief(coverUrl)
@@ -293,6 +296,37 @@ function NowPlayingPage() {
       })
   }, [currentTrack, searchLyricsMutation, setTransientFeedback])
 
+  const restoreOriginal = useCallback(async () => {
+    if (!currentTrack) return
+    try {
+      await restoreLyricsMutation.mutateAsync(currentTrack.id)
+      setTransientFeedback("已恢复原始歌词")
+    } catch {
+      setTransientFeedback("没有可恢复的原始歌词")
+    }
+  }, [currentTrack, restoreLyricsMutation, setTransientFeedback])
+
+  const saveManualLyrics = useCallback(async () => {
+    if (!currentTrack || !manualLyricsText.trim()) return
+    try {
+      await saveLyricsMutation.mutateAsync({
+        trackId: currentTrack.id,
+        payload: { content: manualLyricsText.trim() },
+      })
+      setManualLyricsOpen(false)
+      setManualLyricsText("")
+      setTransientFeedback("已保存手动歌词")
+    } catch {
+      setTransientFeedback("保存失败，请重试")
+    }
+  }, [currentTrack, manualLyricsText, saveLyricsMutation, setTransientFeedback])
+
+  const canRestoreOriginal = Boolean(
+    lyrics?.original_content &&
+    lyrics?.source &&
+    !["embedded", "lrc"].includes(lyrics.source)
+  )
+
   const addCurrentTrackToPlaylist = useCallback(async (playlistId: number) => {
     if (!currentTrack) return
     try {
@@ -338,6 +372,23 @@ function NowPlayingPage() {
             : hasSearchedOnline
               ? "已搜索（点击重搜）"
               : "联网搜词"}
+        </DropdownMenuItem>
+        {canRestoreOriginal && (
+          <DropdownMenuItem
+            onSelect={(e) => e.preventDefault()}
+            onClick={restoreOriginal}
+            disabled={restoreLyricsMutation.isPending}
+            className="focus:bg-white/10 focus:text-white"
+          >
+            恢复原词
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onSelect={(e) => e.preventDefault()}
+          onClick={() => setManualLyricsOpen(true)}
+          className="focus:bg-white/10 focus:text-white"
+        >
+          手动粘贴歌词
         </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
@@ -737,6 +788,42 @@ function NowPlayingPage() {
                   className="rounded-md bg-white px-3 py-2 text-sm text-black transition-colors hover:bg-white/90 disabled:opacity-60"
                 >
                   使用该结果
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 手动粘贴歌词弹窗 */}
+          <Dialog open={manualLyricsOpen} onOpenChange={setManualLyricsOpen}>
+            <DialogContent className="border-white/15 bg-black/80 text-white backdrop-blur-xl">
+              <DialogHeader>
+                <DialogTitle>手动粘贴歌词</DialogTitle>
+                <DialogDescription className="text-white/60">
+                  支持纯文本或 LRC 格式（如 [00:12.34]歌词文本）
+                </DialogDescription>
+              </DialogHeader>
+              <textarea
+                value={manualLyricsText}
+                onChange={(e) => setManualLyricsText(e.target.value)}
+                placeholder={"[00:12.34]第一行歌词\n[00:15.67]第二行歌词"}
+                className="h-60 w-full resize-none rounded-md border border-white/15 bg-white/5 p-3 text-sm text-white/90 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+              />
+              <DialogFooter>
+                <button
+                  onClick={() => {
+                    setManualLyricsOpen(false)
+                    setManualLyricsText("")
+                  }}
+                  className="rounded-md border border-white/20 px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={saveManualLyrics}
+                  disabled={!manualLyricsText.trim() || saveLyricsMutation.isPending}
+                  className="rounded-md bg-white px-3 py-2 text-sm text-black transition-colors hover:bg-white/90 disabled:opacity-60"
+                >
+                  保存
                 </button>
               </DialogFooter>
             </DialogContent>
