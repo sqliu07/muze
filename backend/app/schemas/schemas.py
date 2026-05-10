@@ -197,7 +197,6 @@ class WatchFolderOut(BaseModel):
 
     class Config:
         from_attributes = True
-        from_attributes = True
 
 
 class ScanRequest(BaseModel):

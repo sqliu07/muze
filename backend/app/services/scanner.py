@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -60,8 +61,10 @@ def _extract_cover(audio, track_path: str, covers_dir: str) -> Optional[str]:
     if audio is None:
         return None
 
-    # 用父目录名作为封面文件名（专辑级封面）
-    cover_name = Path(track_path).parent.name + ".jpg"
+    # 用父目录全路径的哈希作为封面文件名，避免不同目录树下同名子目录封面冲突
+    parent_dir = str(Path(track_path).parent)
+    path_hash = hashlib.md5(parent_dir.encode()).hexdigest()[:12]
+    cover_name = f"{path_hash}.jpg"
     dest = Path(covers_dir) / cover_name
     if dest.exists():
         return cover_name
