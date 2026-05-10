@@ -170,52 +170,26 @@
 }
 
 @keyframes nowplaying-orb-a {
-  0% {
-    transform: translate3d(0, 8%, 0) rotate(0deg);
-  }
-  50% {
-    transform: translate3d(4%, -10%, 0) rotate(16deg);
-  }
-  100% {
-    transform: translate3d(0, 8%, 0) rotate(32deg);
-  }
+  0% { transform: translate3d(0, 15%, 0) rotate(0deg); }
+  50% { transform: translate3d(8%, -15%, 0) rotate(20deg); }
+  100% { transform: translate3d(0, 15%, 0) rotate(40deg); }
 }
 
 @keyframes nowplaying-orb-b {
-  0% {
-    transform: translate3d(0, 10%, 0) rotate(0deg);
-  }
-  50% {
-    transform: translate3d(-3%, -8%, 0) rotate(-14deg);
-  }
-  100% {
-    transform: translate3d(0, 10%, 0) rotate(-28deg);
-  }
+  0% { transform: translate3d(0, 12%, 0) rotate(0deg); }
+  50% { transform: translate3d(-6%, -10%, 0) rotate(-18deg); }
+  100% { transform: translate3d(0, 12%, 0) rotate(-36deg); }
 }
 
 @keyframes nowplaying-orb-c {
-  0% {
-    transform: translate3d(0, 12%, 0) rotate(0deg);
-  }
-  50% {
-    transform: translate3d(2%, -6%, 0) rotate(12deg);
-  }
-  100% {
-    transform: translate3d(0, 12%, 0) rotate(24deg);
-  }
+  0% { transform: translate3d(0, 18%, 0) rotate(0deg); }
+  50% { transform: translate3d(5%, -12%, 0) rotate(15deg); }
+  100% { transform: translate3d(0, 18%, 0) rotate(30deg); }
 }
 
-.nowplaying-orb-a {
-  animation: nowplaying-orb-a 50s ease-in-out infinite;
-}
-
-.nowplaying-orb-b {
-  animation: nowplaying-orb-b 60s ease-in-out infinite;
-}
-
-.nowplaying-orb-c {
-  animation: nowplaying-orb-c 70s ease-in-out infinite;
-}
+.nowplaying-orb-a { animation: nowplaying-orb-a 22s ease-in-out infinite; }
+.nowplaying-orb-b { animation: nowplaying-orb-b 28s ease-in-out infinite; }
+.nowplaying-orb-c { animation: nowplaying-orb-c 25s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   .nowplaying-interlude-breathe,

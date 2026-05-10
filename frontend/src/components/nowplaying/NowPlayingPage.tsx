@@ -138,17 +138,48 @@ function NowPlayingPage() {
   const addTracksToPlaylist = useAddTracksToPlaylist()
   const toggleFavorite = useToggleFavorite()
 
-  const coverUrl = currentTrack?.has_cover
-    ? getTrackCoverUrl(currentTrack.id)
-    : null
+  const coverUrl = currentTrack?.has_cover ? getTrackCoverUrl(currentTrack.id) : null
   const colors = useColorThief(coverUrl)
 
+  // 封面交叉淡入淡出状态
+  const [coverLayers, setCoverLayers] = useState<{
+    current: string | null
+    next: string | null
+    showNext: boolean
+  }>({ current: null, next: null, showNext: false })
+  const fadeTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!coverUrl) {
+      setCoverLayers({ current: null, next: null, showNext: false })
+      return
+    }
+    if (coverLayers.current === null) {
+      setCoverLayers({ current: coverUrl, next: null, showNext: false })
+      return
+    }
+    if (coverUrl === coverLayers.current) return
+    // 预加载新封面，然后触发交叉淡入淡出
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      setCoverLayers((prev) => ({ ...prev, next: coverUrl, showNext: true }))
+      fadeTimeoutRef.current = window.setTimeout(() => {
+        setCoverLayers({ current: coverUrl, next: null, showNext: false })
+      }, 1300)
+    }
+    img.src = coverUrl
+    return () => {
+      if (fadeTimeoutRef.current !== null) {
+        window.clearTimeout(fadeTimeoutRef.current)
+      }
+    }
+  }, [coverUrl])
+
   const bg = `linear-gradient(135deg, rgb(${colors[0].join(",")}) 0%, rgb(${colors[1].join(",")}) 50%, rgb(${colors[2].join(",")}) 100%)`
-  // 底部深色遮罩
-  const darkBg = `linear-gradient(to top, rgb(${colors[0].map((c: number) => Math.max(0, c - 40)).join(",")}) 0%, transparent 60%)`
-  const orbAColor = `rgba(${colors[0].map((c: number) => Math.max(0, c - 24)).join(",")}, 0.28)`
-  const orbBColor = `rgba(${colors[2].map((c: number) => Math.max(0, c - 22)).join(",")}, 0.24)`
-  const orbCColor = `rgba(${colors[1].map((c: number) => Math.max(0, c - 20)).join(",")}, 0.2)`
+  const orbAColor = `rgba(${colors[0].join(",")}, 0.08)`
+  const orbBColor = `rgba(${colors[2].join(",")}, 0.1)`
+  const orbCColor = `rgba(${colors[1].join(",")}, 0.06)`
   const hasSearchedOnline = Boolean(
     lyrics?.source &&
     !["embedded", "lrc", "manual"].includes(lyrics.source)
@@ -327,67 +358,90 @@ function NowPlayingPage() {
           exit={{ y: "100%" }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="fixed inset-0 z-50 flex flex-col overflow-hidden"
-          style={{ background: bg }}
         >
-          {/* 底部柔和深色遮罩 */}
+          {/* L1: 封面模糊背景 + 交叉淡入淡出 */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            {coverLayers.current && (
+              <img
+                src={coverLayers.current}
+                alt=""
+                className="absolute h-[140%] w-[140%] object-cover"
+                style={{
+                  top: "-20%", left: "-20%",
+                  filter: "blur(80px) saturate(1.5)",
+                  opacity: coverLayers.showNext ? 0 : 1,
+                  transition: "opacity 1.2s ease-in-out",
+                }}
+              />
+            )}
+            {coverLayers.next && (
+              <img
+                src={coverLayers.next}
+                alt=""
+                className="absolute h-[140%] w-[140%] object-cover"
+                style={{
+                  top: "-20%", left: "-20%",
+                  filter: "blur(80px) saturate(1.5)",
+                  opacity: coverLayers.showNext ? 1 : 0,
+                  transition: "opacity 1.2s ease-in-out",
+                }}
+              />
+            )}
+            {!coverLayers.current && !coverLayers.next && (
+              <div className="absolute inset-0" style={{ background: bg }} />
+            )}
+          </div>
+
+          {/* L2: 暗色覆盖层 */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ background: "rgba(0,0,0,0.35)" }}
+          />
+
+          {/* L3: 颜色渐变覆盖层 */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ background: bg, opacity: 0.35 }}
+          />
+
+          {/* L4: 光晕 */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div
+              className={`absolute left-[6vmin] top-[8vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-a"}`}
+              style={{
+                width: "40vmin", height: "40vmin",
+                backgroundColor: orbAColor, borderRadius: "50%",
+                filter: "blur(60px)", willChange: "transform, opacity",
+              }}
+            />
+            <div
+              className={`absolute right-[8vmin] top-[16vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-b"}`}
+              style={{
+                width: "34vmin", height: "34vmin",
+                backgroundColor: orbBColor, borderRadius: "50%",
+                filter: "blur(60px)", willChange: "transform, opacity",
+              }}
+            />
+            <div
+              className={`absolute left-[22vmin] bottom-[6vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-c"}`}
+              style={{
+                width: "42vmin", height: "42vmin",
+                backgroundColor: orbCColor, borderRadius: "50%",
+                filter: "blur(60px)", willChange: "transform, opacity",
+              }}
+            />
+          </div>
+
+          {/* L5: 底部渐变呼吸 */}
           <div
             className={`pointer-events-none absolute bottom-0 left-0 right-0 h-[50%] ${
               prefersReducedMotion ? "" : "animate-gradient-breathe"
             }`}
             style={{
-              background: darkBg,
-              filter: "blur(40px)",
-              animationPlayState: "running",
+              background: "linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%)",
               willChange: "transform, opacity",
             }}
           />
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div
-              className={`absolute left-[6vmin] top-[8vmin] ${
-                prefersReducedMotion ? "" : "nowplaying-orb-a"
-              }`}
-              style={{
-                width: "40vmin",
-                height: "40vmin",
-                backgroundColor: orbAColor,
-                borderRadius: "50%",
-                filter: "blur(30px)",
-                opacity: 0.24,
-                animationPlayState: "running",
-                willChange: "transform, opacity",
-              }}
-            />
-            <div
-              className={`absolute right-[8vmin] top-[16vmin] ${
-                prefersReducedMotion ? "" : "nowplaying-orb-b"
-              }`}
-              style={{
-                width: "34vmin",
-                height: "34vmin",
-                backgroundColor: orbBColor,
-                borderRadius: "50%",
-                filter: "blur(30px)",
-                opacity: 0.2,
-                animationPlayState: "running",
-                willChange: "transform, opacity",
-              }}
-            />
-            <div
-              className={`absolute left-[22vmin] bottom-[6vmin] ${
-                prefersReducedMotion ? "" : "nowplaying-orb-c"
-              }`}
-              style={{
-                width: "42vmin",
-                height: "42vmin",
-                backgroundColor: orbCColor,
-                borderRadius: "50%",
-                filter: "blur(34px)",
-                opacity: 0.18,
-                animationPlayState: "running",
-                willChange: "transform, opacity",
-              }}
-            />
-          </div>
           {/* 顶部栏 */}
           <div className="relative z-10 flex items-center px-4 py-3">
             <button
