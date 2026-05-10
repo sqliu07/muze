@@ -64,7 +64,12 @@ def test_remove_watch_folder(client, tmp_dir: Path):
 def test_clear_library(client, tmp_dir: Path):
     """DELETE /api/library/clear 清空全部数据。"""
     create_minimal_mp3(tmp_dir / "song.mp3")
-    client.post("/api/library/scan", json={"path": str(tmp_dir)})
+
+    # 先添加 WatchFolder，满足路径白名单校验
+    client.post("/api/library/folders", json={"path": str(tmp_dir)})
+
+    resp = client.post("/api/library/scan", json={"path": str(tmp_dir)})
+    assert resp.status_code == 200
 
     resp = client.delete("/api/library/clear")
     assert resp.status_code == 200
@@ -73,3 +78,45 @@ def test_clear_library(client, tmp_dir: Path):
     resp = client.get("/api/tracks")
     assert resp.status_code == 200
     assert resp.json()["total"] == 0
+
+
+def test_scan_exact_match_path(client, tmp_dir: Path):
+    """扫描与 WatchFolder 完全相同的路径 → 200。"""
+    create_minimal_mp3(tmp_dir / "song.mp3")
+    client.post("/api/library/folders", json={"path": str(tmp_dir)})
+
+    resp = client.post("/api/library/scan", json={"path": str(tmp_dir)})
+    assert resp.status_code == 200
+
+
+def test_scan_subfolder_of_watch_folder(client, tmp_dir: Path):
+    """扫描 WatchFolder 的子目录 → 200。"""
+    sub = tmp_dir / "sub"
+    sub.mkdir()
+    create_minimal_mp3(sub / "song.mp3")
+    client.post("/api/library/folders", json={"path": str(tmp_dir)})
+
+    resp = client.post("/api/library/scan", json={"path": str(sub)})
+    assert resp.status_code == 200
+
+
+def test_scan_unrelated_path_returns_403(client, tmp_dir: Path):
+    """扫描与任何 WatchFolder 无关的路径 → 403。"""
+    other = tmp_dir / "other"
+    other.mkdir()
+    create_minimal_mp3(other / "song.mp3")
+    # 添加的 WatchFolder 与 other 无关
+    watched = tmp_dir / "watched"
+    watched.mkdir()
+    client.post("/api/library/folders", json={"path": str(watched)})
+
+    resp = client.post("/api/library/scan", json={"path": str(other)})
+    assert resp.status_code == 403
+
+
+def test_scan_no_watch_folder_returns_403(client, tmp_dir: Path):
+    """没有任何 WatchFolder 时扫描 → 403。"""
+    create_minimal_mp3(tmp_dir / "song.mp3")
+
+    resp = client.post("/api/library/scan", json={"path": str(tmp_dir)})
+    assert resp.status_code == 403

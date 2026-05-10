@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import COVERS_DIR, LOGS_DIR
@@ -129,24 +128,22 @@ def scan_folder(body: ScanRequest, db: Session = Depends(get_db)):
     # 路径白名单校验：扫描路径必须与某个 active WatchFolder 存在前缀关系
     scan_path = os.path.realpath(body.path)
     active_folders = db.query(WatchFolder).filter_by(active=True).all()
-    allowed = False
+    matched_folder = None
     for folder in active_folders:
         folder_path = os.path.realpath(folder.path)
         # 双向前缀匹配：精确匹配、子目录扫描、父目录扫描
         if scan_path == folder_path or scan_path.startswith(folder_path + os.sep) or folder_path.startswith(scan_path + os.sep):
-            allowed = True
+            matched_folder = folder
             break
-    if not allowed:
+    if not matched_folder:
         raise HTTPException(status_code=403, detail="请先将该目录添加到媒体库")
 
     covers_dir = str(COVERS_DIR)
     result = scan_directory(body.path, db, covers_dir)
 
     # 更新 last_scanned
-    folder = db.query(WatchFolder).filter_by(path=body.path).first()
-    if folder:
-        folder.last_scanned = datetime.utcnow()
-        db.commit()
+    matched_folder.last_scanned = datetime.utcnow()
+    db.commit()
 
     return result
 
