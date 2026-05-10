@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from app.core.database import Base, engine
 from app.models import models  # noqa: F401 — 注册所有模型
 
 setup_logging()
+logger = logging.getLogger(__name__)
 
 from app.api.library import router as library_router
 from app.api.tracks import router as tracks_router
@@ -29,6 +31,28 @@ from app.api.ws import manager
 from app.services.watcher import start_watcher, stop_watcher
 
 Base.metadata.create_all(bind=engine)
+
+
+def _migrate_schema() -> None:
+    """给已有表补缺列（SQLite ALTER TABLE ADD COLUMN 幂等）。"""
+    import sqlalchemy as sa
+
+    migrations = [
+        ("lyrics", "original_content", "TEXT"),
+        ("lyrics", "original_source", "VARCHAR(20)"),
+    ]
+
+    with engine.begin() as conn:
+        for table, column, col_type in migrations:
+            try:
+                conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                logger.info("迁移: 已添加 %s.%s (%s)", table, column, col_type)
+            except Exception:
+                # 列已存在则忽略
+                pass
+
+
+_migrate_schema()
 
 
 @asynccontextmanager
