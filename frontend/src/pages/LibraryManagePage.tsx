@@ -32,10 +32,8 @@ export default function LibraryManagePage() {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
-        if (msg.type === 'scan_complete' || msg.type === 'file_added') {
-          queryClient.invalidateQueries({ queryKey: ['tracks'] })
-          queryClient.invalidateQueries({ queryKey: ['albums'] })
-          queryClient.invalidateQueries({ queryKey: ['artists'] })
+        if (msg.type === 'file_added' || msg.type === 'file_removed') {
+          queryClient.invalidateQueries()
         }
       } catch {
         // 忽略非 JSON 消息
@@ -53,12 +51,7 @@ export default function LibraryManagePage() {
   }
 
   function invalidateLibrary() {
-    queryClient.invalidateQueries({ queryKey: ['tracks'] })
-    queryClient.invalidateQueries({ queryKey: ['albums'] })
-    queryClient.invalidateQueries({ queryKey: ['artists'] })
-    queryClient.refetchQueries({ queryKey: ['tracks'] })
-    queryClient.refetchQueries({ queryKey: ['albums'] })
-    queryClient.refetchQueries({ queryKey: ['artists'] })
+    queryClient.invalidateQueries()
   }
 
   async function handlePickerConfirm(paths: string[]) {
