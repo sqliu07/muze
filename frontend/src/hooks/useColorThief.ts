@@ -12,7 +12,6 @@ declare global {
 const DEFAULT_COLORS: [number, number, number][] = [
   [45, 45, 45],
   [30, 30, 30],
-  [60, 60, 60],
 ]
 
 /**
@@ -48,8 +47,8 @@ export function useColorThief(imageUrl: string | null): [number, number, number]
     img.onload = () => {
       try {
         const ct = new window.ColorThief()
-        const palette = ct.getPalette(img, 3).slice(0, 3)
-        while (palette.length < 3) {
+        const palette = ct.getPalette(img, 2).slice(0, 2)
+        while (palette.length < 2) {
           palette.push(DEFAULT_COLORS[palette.length])
         }
         cacheRef.current.set(imageUrl, palette)

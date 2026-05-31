@@ -1,11 +1,20 @@
 import { useParams } from 'react-router-dom'
+import { Play } from 'lucide-react'
 import { useAlbum } from '@/api/hooks/useAlbums'
 import { getAlbumCoverUrl } from '@/api/client'
+import { usePlayerStore } from '@/store/playerStore'
 import TrackList from '@/components/library/TrackList'
 
 export default function AlbumDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { data: album, isLoading } = useAlbum(Number(id))
+  const setQueue = usePlayerStore((s) => s.setQueue)
+
+  const handlePlayAll = () => {
+    if (album?.tracks && album.tracks.length > 0) {
+      setQueue(album.tracks, 0)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -56,6 +65,17 @@ export default function AlbumDetailPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* 播放全部 */}
+      <div className="flex items-center px-6 py-4">
+        <button
+          onClick={handlePlayAll}
+          className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
+        >
+          <Play className="h-4 w-4" fill="currentColor" />
+          播放
+        </button>
       </div>
 
       {/* 曲目列表 */}

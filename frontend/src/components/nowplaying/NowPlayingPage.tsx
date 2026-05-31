@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+import useAudioAnalyser from "@/hooks/useAudioAnalyser"
+import BassBlobs from "@/components/prototype/BassBlobs"
 import {
   ChevronDown,
   Play,
@@ -134,7 +136,6 @@ function NowPlayingPage() {
   const [customSearchOpen, setCustomSearchOpen] = useState(false)
   const [customTitle, setCustomTitle] = useState("")
   const [customArtist, setCustomArtist] = useState("")
-  const [driftIntensity, setDriftIntensity] = useState(1)
   const [candidatesOpen, setCandidatesOpen] = useState(false)
   const [candidates, setCandidates] = useState<LyricsCandidate[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(false)
@@ -152,73 +153,8 @@ function NowPlayingPage() {
 
   const coverUrl = currentTrack?.has_cover ? getTrackCoverUrl(currentTrack.id) : null
   const colors = useColorThief(coverUrl)
-  const colorBgRef = useRef<HTMLDivElement>(null)
-  const driftRefA = useRef<HTMLDivElement>(null)
-  const driftRefB = useRef<HTMLDivElement>(null)
-  const driftRefC = useRef<HTMLDivElement>(null)
+  const { bassSmoothed } = useAudioAnalyser()
 
-  // 更新渐变色块背景的 CSS 自定义属性
-  useEffect(() => {
-    const el = colorBgRef.current
-    if (!el) return
-    el.style.setProperty("--gc1", `rgb(${colors[0].join(",")})`)
-    el.style.setProperty("--gc2", `rgb(${colors[1].join(",")})`)
-    el.style.setProperty("--gc3", `rgb(${colors[2].join(",")})`)
-  }, [colors])
-
-  // 用 Web Animations API 驱动色块漂移 — 绕过 framer-motion 对 transform 的管理
-  useEffect(() => {
-    if (driftIntensity <= 0) return
-    const refs = [driftRefA, driftRefB, driftRefC]
-    const vw = window.innerWidth / 100
-    const vh = window.innerHeight / 100
-    const cfg = [
-      { dur: 22000, ax: 8 * vw, ay: 5 * vh, as: 0.06, sx: 0.43, sy: 0.31 },
-      { dur: 28000, ax: 7 * vw, ay: 6 * vh, as: 0.05, sx: 0.37, sy: 0.29 },
-      { dur: 25000, ax: 7.5 * vw, ay: 4.5 * vh, as: 0.07, sx: 0.41, sy: 0.34 },
-    ]
-    const anims: Animation[] = []
-    refs.forEach((ref, i) => {
-      const el = ref.current
-      if (!el) return
-      const c = cfg[i]
-      // 生成 20 帧关键帧，模拟多频率叠加的准随机漂移
-      const frames: Keyframe[] = []
-      const steps = 20
-      for (let f = 0; f <= steps; f++) {
-        const t = (f / steps) * Math.PI * 2
-        const dx = (
-          Math.sin(t) * 1.0 +
-          Math.sin(t * c.sx) * 0.6 +
-          Math.sin(t * 0.19) * 0.3
-        ) * c.ax * driftIntensity / 1.9
-        const dy = (
-          Math.cos(t * c.sy) * 1.0 +
-          Math.cos(t * 0.17) * 0.5 +
-          Math.cos(t * 0.07) * 0.35
-        ) * c.ay * driftIntensity / 1.85
-        const sc = 1 + (
-          Math.sin(t * 0.11) * 0.6 +
-          Math.sin(t * 0.23) * 0.4
-        ) * c.as * driftIntensity / 1.0
-        frames.push({
-          transform: `translate(${dx}px, ${dy}px) scale(${sc})`,
-          offset: f / steps,
-        })
-      }
-      const anim = el.animate(frames, {
-        duration: c.dur,
-        iterations: Infinity,
-        easing: "linear",
-      })
-      anims.push(anim)
-    })
-    return () => anims.forEach((a) => a.cancel())
-  }, [driftIntensity])
-
-  const orbAColor = `rgba(${colors[0].join(",")}, 0.3)`
-  const orbBColor = `rgba(${colors[2].join(",")}, 0.35)`
-  const orbCColor = `rgba(${colors[1].join(",")}, 0.25)`
   const hasSearchedOnline = Boolean(
     lyrics?.source &&
     !["embedded", "lrc", "manual"].includes(lyrics.source)
@@ -435,22 +371,6 @@ function NowPlayingPage() {
           手动粘贴歌词
         </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10" />
-        <div className="px-3 py-2">
-          <div className="flex items-center justify-between text-xs text-white/60">
-            <span>背景动效</span>
-            <span>{driftIntensity === 0 ? "关" : `${Math.round(driftIntensity * 100)}%`}</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={2}
-            step={0.25}
-            value={driftIntensity}
-            onChange={(e) => setDriftIntensity(Number(e.target.value))}
-            className="mt-1 w-full accent-white/80"
-          />
-        </div>
-        <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
           onSelect={(e) => e.preventDefault()}
           onClick={() => setPlaylistDialogOpen(true)}
@@ -474,81 +394,22 @@ function NowPlayingPage() {
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="fixed inset-0 z-50 flex flex-col overflow-hidden"
         >
-          {/* L0: 纯色底（不透明） */}
+          {/* L0: 专辑取色底色 */}
           <div
-            className="pointer-events-none absolute inset-0"
-            style={{ backgroundColor: "rgb(12, 12, 12)" }}
+            className="pointer-events-none absolute inset-0 transition-colors duration-700"
+            style={{ backgroundColor: `rgb(${colors[0][0]}, ${colors[0][1]}, ${colors[0][2]})` }}
           />
 
-          {/* L1: 色块渐变背景（从封面提取主色，3 层独立漂移） */}
-          <div ref={colorBgRef} className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div
-              ref={driftRefA}
-              className="absolute inset-[-30%]"
-              style={{
-                background: "radial-gradient(ellipse at 30% 40%, var(--gc1) 0%, color-mix(in srgb, var(--gc1), transparent 40%) 35%, color-mix(in srgb, var(--gc1), transparent 75%) 60%, transparent 85%)",
-                willChange: "transform",
-              }}
-            />
-            <div
-              ref={driftRefB}
-              className="absolute inset-[-30%]"
-              style={{
-                background: "radial-gradient(ellipse at 70% 25%, var(--gc2) 0%, color-mix(in srgb, var(--gc2), transparent 40%) 30%, color-mix(in srgb, var(--gc2), transparent 75%) 55%, transparent 80%)",
-                willChange: "transform",
-              }}
-            />
-            <div
-              ref={driftRefC}
-              className="absolute inset-[-30%]"
-              style={{
-                background: "radial-gradient(ellipse at 45% 80%, var(--gc3) 0%, color-mix(in srgb, var(--gc3), transparent 45%) 32%, color-mix(in srgb, var(--gc3), transparent 78%) 58%, transparent 82%)",
-                willChange: "transform",
-              }}
-            />
-          </div>
+          {/* L1: BassBlobs — 音频驱动的有机色块背景 */}
+          <BassBlobs colors={colors} />
 
-          {/* L2: 暗色覆盖层 */}
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{ background: "rgba(0,0,0,0.05)" }}
-          />
-
-          {/* L3: 色块光晕 */}
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div
-              className={`absolute left-[-10vmin] top-[-10vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-a"}`}
-              style={{
-                width: "60vmin", height: "60vmin",
-                backgroundColor: orbAColor, borderRadius: "50%",
-                filter: "blur(100px)", willChange: "transform, opacity",
-              }}
-            />
-            <div
-              className={`absolute right-[-8vmin] top-[5vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-b"}`}
-              style={{
-                width: "55vmin", height: "55vmin",
-                backgroundColor: orbBColor, borderRadius: "50%",
-                filter: "blur(100px)", willChange: "transform, opacity",
-              }}
-            />
-            <div
-              className={`absolute bottom-[-12vmin] left-[10vmin] ${prefersReducedMotion ? "" : "nowplaying-orb-c"}`}
-              style={{
-                width: "65vmin", height: "65vmin",
-                backgroundColor: orbCColor, borderRadius: "50%",
-                filter: "blur(100px)", willChange: "transform, opacity",
-              }}
-            />
-          </div>
-
-          {/* L5: 底部渐变呼吸 */}
+          {/* L2: 底部渐变 — 用主色替代黑色 */}
           <div
             className={`pointer-events-none absolute bottom-0 left-0 right-0 h-[50%] ${
               prefersReducedMotion ? "" : "animate-gradient-breathe"
             }`}
             style={{
-              background: "linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%)",
+              background: `linear-gradient(to top, rgba(${colors[0][0]}, ${colors[0][1]}, ${colors[0][2]}, 0.7) 0%, transparent 60%)`,
               willChange: "transform, opacity",
             }}
           />
@@ -581,18 +442,18 @@ function NowPlayingPage() {
               >
                 <CoverArt
                   track={currentTrack ?? null}
-                  size={lyricsVisible ? 380 : 460}
+                  size={lyricsVisible ? 300 : 420}
                 />
-                <div className="mt-6 text-center">
-                  <p className="text-xl font-bold text-white">
+                <div className="mt-4 text-center">
+                  <p className="text-lg font-bold text-white">
                     {currentTrack?.title ?? "未在播放"}
                   </p>
                   <div className="mt-1 flex items-center justify-center gap-2 text-sm text-white/50">
-                    <span>{currentTrack?.artist?.name ?? "未知艺术家"}</span>
+                    <span className="shrink-0">{currentTrack?.artist?.name ?? "未知艺术家"}</span>
                     {currentTrack?.album?.title ? (
                       <>
-                        <span className="text-white/25">/</span>
-                        <span className="max-w-[14rem] truncate">{currentTrack.album.title}</span>
+                        <span className="shrink-0 text-white/25">/</span>
+                        <span className="min-w-0 truncate">{currentTrack.album.title}</span>
                       </>
                     ) : null}
                   </div>

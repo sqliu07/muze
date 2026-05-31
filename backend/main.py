@@ -26,6 +26,7 @@ from app.api.playlists import router as playlists_router
 from app.api.favorites import router as favorites_router
 from app.api.ws import router as ws_router
 from app.api.lyrics import router as lyrics_router
+from app.api.search import router as search_router
 
 from app.api.ws import manager
 from app.services.watcher import start_watcher, stop_watcher
@@ -76,6 +77,10 @@ async def lifespan(_app: FastAPI):
     from app.services.lyrics_daemon import start_lyrics_daemon
     start_lyrics_daemon()
 
+    # 启动歌手照片守护进程
+    from app.services.artist_image_daemon import start_artist_image_daemon
+    start_artist_image_daemon()
+
     yield
 
     # 关闭时：停止监听
@@ -100,6 +105,7 @@ app.include_router(playlists_router)
 app.include_router(favorites_router)
 app.include_router(ws_router)
 app.include_router(lyrics_router)
+app.include_router(search_router)
 
 
 @app.get("/api/health")

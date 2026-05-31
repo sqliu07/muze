@@ -374,6 +374,7 @@ def scan_file(
     # 提取元数据
     title = _get_tag(audio, "TIT2") or _get_tag(audio, "title") or path.stem
     artist_name = _get_tag(audio, "TPE1") or _get_tag(audio, "artist")
+    album_artist_name = _get_tag(audio, "TPE2") or _get_tag(audio, "aART") or _get_tag(audio, "albumartist")
     album_title = _get_tag(audio, "TALB") or _get_tag(audio, "album")
     year_val = _get_tag(audio, "TDRC") or _get_tag(audio, "date") or _get_tag(audio, "year")
     track_num = _get_tag(audio, "TRCK") or _get_tag(audio, "tracknumber")
@@ -422,10 +423,13 @@ def scan_file(
             path,
         )
     genre_text = _to_simplified_text(str(genre_val)) if genre_val else None
+    # 专辑艺术家优先使用 TPE2/aART/albumartist，未设置则回退到曲目艺术家
+    effective_album_artist_name = album_artist_name if album_artist_name else artist_name
+    album_artist = _get_or_create_artist(db, str(effective_album_artist_name) if effective_album_artist_name else None)
     album = _get_or_create_album(
         db,
         album_name,
-        artist,
+        album_artist,
         year_int,
         genre_text,
     )
@@ -434,6 +438,8 @@ def scan_file(
     if album and cover_name and not album.cover_path:
         album.cover_path = cover_name
     # 歌手头像默认复用其首个专辑封面，避免歌手无头像。
+    if album_artist and cover_name and not album_artist.cover_path:
+        album_artist.cover_path = cover_name
     if artist and cover_name and not artist.cover_path:
         artist.cover_path = cover_name
     if (

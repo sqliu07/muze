@@ -1,6 +1,8 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { type TrackOut } from "@/types/api"
+import { PREV_RESTART_THRESHOLD } from "@/config/player"
+import { seekAudio } from "@/hooks/useAudio"
 
 export type Track = TrackOut
 
@@ -121,8 +123,15 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playPrev: () => {
-        const { queue, currentIndex } = get()
+        const { queue, currentIndex, currentTime } = get()
         if (queue.length === 0 || currentIndex < 0) return
+
+        // 播放超过 3 秒，回到当前曲目开头
+        if (currentTime > PREV_RESTART_THRESHOLD) {
+          seekAudio(0)
+          return
+        }
+
         const prevIndex =
           currentIndex <= 0 ? queue.length - 1 : currentIndex - 1
         set({ currentIndex: prevIndex, currentTime: 0 })

@@ -31,7 +31,7 @@ export function parseLrc(content: string): LyricLine[] {
     if (!match) continue
 
     const tagsPart = match[1]
-    const text = match[2].trim()
+    const text = _cleanLyricText(match[2].trim())
 
     // 逐字/逐词时间戳行（例如 LDDC 输出: [00:00.000]周[00:00.500]杰...）
     if (_containsInlineWordTags(text)) {
@@ -92,4 +92,8 @@ export function getCurrentLineIndex(lines: LyricLine[], currentTime: number): nu
 
 function _containsInlineWordTags(text: string): boolean {
   return /\[(\d{2}):(\d{2})[.:](\d{2,3})\]/.test(text)
+}
+
+function _cleanLyricText(text: string): string {
+  return text.replace(/^此歌曲为没有填词的纯音乐，请您欣赏$/, "纯音乐，请欣赏")
 }

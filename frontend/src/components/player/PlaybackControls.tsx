@@ -1,7 +1,22 @@
-import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Shuffle } from "lucide-react"
+import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Shuffle, ListMusic } from "lucide-react"
 import { usePlayerStore } from "@/store/playerStore"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+
+const MODE_LABELS: Record<string, string> = {
+  sequential: "顺序播放",
+  "repeat-all": "列表循环",
+  "repeat-one": "单曲循环",
+  shuffle: "随机播放",
+}
+
+const MODE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  sequential: Repeat,
+  "repeat-all": ListMusic,
+  "repeat-one": Repeat1,
+  shuffle: Shuffle,
+}
 
 export function PlaybackControls() {
   const isPlaying = usePlayerStore((s) => s.isPlaying)
@@ -11,22 +26,26 @@ export function PlaybackControls() {
   const playPrev = usePlayerStore((s) => s.playPrev)
   const cyclePlayMode = usePlayerStore((s) => s.cyclePlayMode)
 
-  const ModeIcon =
-    playMode === "repeat-one" ? Repeat1
-    : playMode === "shuffle" ? Shuffle
-    : Repeat
+  const ModeIcon = MODE_ICONS[playMode]
 
   return (
     <div className="flex items-center gap-2">
       {/* 播放模式 */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={cyclePlayMode}
-        className={cn(playMode !== "sequential" && "text-primary")}
-      >
-        <ModeIcon className="h-4 w-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={cyclePlayMode}
+            className={cn(playMode !== "sequential" && "text-primary")}
+          >
+            <ModeIcon className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{MODE_LABELS[playMode]}</p>
+        </TooltipContent>
+      </Tooltip>
 
       {/* 上一曲 */}
       <Button variant="ghost" size="icon" onClick={playPrev}>

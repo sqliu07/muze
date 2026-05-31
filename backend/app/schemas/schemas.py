@@ -104,7 +104,7 @@ class AlbumDetailOut(AlbumOut):
 
 
 class ArtistDetailOut(ArtistOut):
-    albums: list[AlbumSummaryOut] = []
+    albums: list[AlbumOut] = []
 
 
 # ── Lyrics ──────────────────────────────────────────────────────────────────
@@ -234,3 +234,12 @@ class FavoriteOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Search ───────────────────────────────────────────────────────────────────
+
+
+class SearchResultOut(BaseModel):
+    artists: list[ArtistOut] = []
+    albums: list[AlbumOut] = []
+    tracks: list[TrackOut] = []

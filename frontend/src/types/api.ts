@@ -155,3 +155,9 @@ export interface AlbumsParams {
   sort?: string
   artist_id?: number
 }
+
+export interface SearchResult {
+  artists: ArtistOut[]
+  albums: AlbumOut[]
+  tracks: TrackOut[]
+}

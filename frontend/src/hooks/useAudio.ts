@@ -4,6 +4,7 @@ import { getTrackStreamUrl } from "@/api/client"
 
 // 全局唯一的 Audio 实例
 const audio = new Audio()
+let audioContext: AudioContext | null = null
 let initialized = false
 let previousTrackId: number | null = null
 let pendingCanPlayHandler: (() => void) | null = null
@@ -71,6 +72,17 @@ export function seekAudio(time: number) {
   audio.currentTime = time
   usePlayerStore.getState().setCurrentTime(time)
   lastSyncedTime = time
+}
+
+export function getAudioElement(): HTMLAudioElement {
+  return audio
+}
+
+export function getAudioContext(): AudioContext {
+  if (!audioContext) {
+    audioContext = new AudioContext()
+  }
+  return audioContext
 }
 
 export function getAudioCurrentTime(): number {

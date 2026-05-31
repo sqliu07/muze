@@ -19,8 +19,8 @@ from mutagen import File as MutagenFile
 
 logger = logging.getLogger(__name__)
 
-_LRC_TIMESTAMP_RE = re.compile(r"\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]")
-_WORD_TS_RE = re.compile(r"<\d{1,2}:\d{2}(?:\.\d{1,3})?>")
+_LRC_TIMESTAMP_RE = re.compile(r"\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]")
+_WORD_TS_RE = re.compile(r"<\d{1,2}:\d{2}(?:[.:]\d{1,3})?>")
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_LDDC_REPO_PATH = _PROJECT_ROOT / "3rdparty" / "LDDC"
 _FALLBACK_LDDC_REPO_PATH = Path("/tmp/LDDC")

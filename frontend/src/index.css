@@ -183,18 +183,17 @@
 
 @keyframes nowplaying-interlude-breathe {
   0%, 100% {
-    transform: scale(0.94);
-    opacity: 0.72;
+    opacity: 0.35;
+    transform: scale(0.75);
   }
   50% {
-    transform: scale(1.05);
-    opacity: 0.96;
+    opacity: 0.9;
+    transform: scale(1.15);
   }
 }
 
 .nowplaying-interlude-breathe {
-  animation: nowplaying-interlude-breathe 6.5s ease-in-out infinite;
-  transform-origin: center center;
+  animation: nowplaying-interlude-breathe 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 @keyframes nowplaying-orb-a {

@@ -250,3 +250,42 @@ export async function addFoldersBatch(paths: string[]): Promise<WatchFolderOut[]
   const { data } = await api.post<WatchFolderOut[]>('/library/folders/batch', { paths })
   return data
 }
+
+// --- Search ---
+
+export interface SearchResult {
+  artists: ArtistOut[]
+  albums: AlbumOut[]
+  tracks: TrackOut[]
+}
+
+export async function searchAll(q: string, limit = 10): Promise<SearchResult> {
+  const { data } = await api.get<SearchResult>('/search', { params: { q, limit } })
+  return data
+}
+
+// --- Artist Images ---
+
+export interface ArtistImageFetchStatus {
+  running: boolean
+  total: number
+  processed: number
+  success: number
+  failed: number
+  current_artist: string | null
+}
+
+export async function fetchArtistImages(): Promise<{ success: number; total: number; failed: number }> {
+  const { data } = await api.post('/artists/batch-fetch-images')
+  return data
+}
+
+export async function getArtistImageFetchStatus(): Promise<ArtistImageFetchStatus> {
+  const { data } = await api.get('/artists/fetch-status')
+  return data
+}
+
+export async function fetchArtistImage(artistId: number): Promise<{ status: string; message: string }> {
+  const { data } = await api.post(`/artists/${artistId}/fetch-image`)
+  return data
+}

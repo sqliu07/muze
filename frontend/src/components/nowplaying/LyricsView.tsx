@@ -1,15 +1,48 @@
-import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useLayoutEffect, useRef } from "react"
+import { motion } from "framer-motion"
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import useLyricSync from "@/hooks/useLyricSync"
 import { getAudioCurrentTime } from "@/hooks/useAudio"
 import type { LyricsOut } from "@/types/api"
+import {
+  LYRIC_ROW_HEIGHT,
+  CURRENT_LINE_WEIGHT,
+  OTHER_LINE_WEIGHT,
+  WORD_LIFT_MAX,
+  FILL_SPRING_K,
+  FILL_SPRING_C,
+  SEGMENT_TAIL_MIN,
+  SEGMENT_TAIL_MAX,
+  SEGMENT_END_MIN_PAD,
+  SEGMENT_END_NEXT_PAD,
+  DEFAULT_WORD_GAP,
+  SEGMENT_SMOOTH_EPSILON,
+  DT_CLAMP_MIN,
+  DT_CLAMP_MAX,
+  SCROLL_SPRING_STIFFNESS,
+  SCROLL_SPRING_DAMPING,
+  SCROLL_SPRING_MASS,
+  LINE_OPACITY_D1,
+  LINE_OPACITY_D2,
+  LINE_OPACITY_D3,
+  LINE_OPACITY_D_FAR,
+  OPACITY_TRANSITION_DURATION,
+  INTERLUDE_DOT_BREATHE_DURATION,
+  INTERLUDE_DOT_SCALE_MAX,
+  INTERLUDE_DOT_SCALE_MIN,
+  INTERLUDE_DOT_EXIT_PEAK,
+  INTERLUDE_EXIT_RATIO,
+  INTERLUDE_EXIT_DURATION_MIN,
+  INTERLUDE_EXIT_DURATION_MAX,
+  INTERLUDE_HIDE_BEFORE_MIN,
+  LYRIC_FONT_FAMILY,
+  LYRIC_FONT_SIZE,
+  LYRIC_LINE_HEIGHT,
+} from "@/config/lyrics"
 
 interface LyricsViewProps {
   lyrics: LyricsOut | null | undefined
   onSeek?: (time: number) => void
 }
-
-const LYRIC_ROW_HEIGHT = 92
 
 function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
   const {
@@ -17,10 +50,9 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
     currentIndex,
     interludeProgress,
     interludeAfterIndex,
-    currentLineProgress,
+    interludeHideBefore,
   } = useLyricSync(lyrics)
   const interludeActive = interludeProgress !== null && interludeAfterIndex !== null
-  const preludeInterlude = interludeActive && interludeAfterIndex === -1
   const activeFillRef = useRef<HTMLSpanElement | null>(null)
   const targetProgressRef = useRef(0)
   const displayedProgressRef = useRef(0)
@@ -37,6 +69,64 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
     revealStarts: number[]
     total: number
   } | null>(null)
+  // ── 间奏 phase 状态机 ──
+  // idle → interlude(点阵出现) → exiting(点阵收缩消失) → scrolling(下一句上浮) → idle
+  type Phase = "idle" | "interlude" | "exiting" | "scrolling"
+  const [phase, setPhase] = useState<Phase>("idle")
+  const lastInterludeAfterIndexRef = useRef<number | null>(null)
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 间奏激活时记录 afterIndex，退出后继续保留以便定位点阵位置
+  if (interludeActive && interludeAfterIndex !== null) {
+    lastInterludeAfterIndexRef.current = interludeAfterIndex
+  }
+
+  const hasDots = phase === "interlude" || phase === "exiting"
+  const dotsExiting = phase === "exiting"
+  const dotsAfterIndex = hasDots ? (interludeAfterIndex ?? lastInterludeAfterIndexRef.current) : null
+
+  // 动态计算退出动画时长
+  const exitDuration = useMemo(() => {
+    const hideBefore = interludeHideBefore ?? INTERLUDE_HIDE_BEFORE_MIN
+    return Math.max(
+      INTERLUDE_EXIT_DURATION_MIN,
+      Math.min(INTERLUDE_EXIT_DURATION_MAX, hideBefore * INTERLUDE_EXIT_RATIO),
+    )
+  }, [interludeHideBefore])
+
+  // 根据 phase / 间奏状态驱动状态机变迁
+  useLayoutEffect(() => {
+    if (interludeActive && phase === "idle") {
+      setPhase("interlude")
+      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current)
+      if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current)
+    }
+    if (!interludeActive && phase === "interlude") {
+      setPhase("exiting")
+      timingRef.current = null
+      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current)
+      exitTimerRef.current = setTimeout(() => {
+        setPhase("scrolling")
+        if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current)
+        scrollTimerRef.current = setTimeout(() => {
+          setPhase("idle")
+        }, 600)
+      }, exitDuration * 1000)
+    }
+  }, [interludeActive, phase, exitDuration])
+
+  // ── 滚动目标 ──
+  const targetDisplayPos = currentIndex + (hasDots && dotsAfterIndex !== null && currentIndex > dotsAfterIndex ? 1 : 0)
+  const scrollTargetY = targetDisplayPos >= 0 ? -(targetDisplayPos * LYRIC_ROW_HEIGHT) : LYRIC_ROW_HEIGHT
+
+  const scrollAnimate = useMemo(() => ({ y: scrollTargetY }), [scrollTargetY])
+  const scrollTransition = useMemo(() => ({
+    type: "spring" as const,
+    stiffness: SCROLL_SPRING_STIFFNESS,
+    damping: SCROLL_SPRING_DAMPING,
+    mass: SCROLL_SPRING_MASS,
+  }), [])
 
   useLayoutEffect(() => {
     if (lastLineIndexRef.current !== currentIndex) {
@@ -77,13 +167,13 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
       }
       const avgGap = gaps.length > 0
         ? gaps.reduce((acc, g) => acc + g, 0) / gaps.length
-        : 0.22
+        : DEFAULT_WORD_GAP
       const ends = starts.map((s, i) => {
         if (i < starts.length - 1) return starts[i + 1]
-        const tail = Math.max(0.14, Math.min(0.5, avgGap))
+        const tail = Math.max(SEGMENT_TAIL_MIN, Math.min(SEGMENT_TAIL_MAX, avgGap))
         const fallback = s + tail
         if (nextLineTime !== undefined) {
-          return Math.max(s + 0.08, Math.min(nextLineTime - 0.02, fallback))
+          return Math.max(s + SEGMENT_END_MIN_PAD, Math.min(nextLineTime - SEGMENT_END_NEXT_PAD, fallback))
         }
         return fallback
       })
@@ -100,7 +190,7 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
         let progressed = 0
         for (let i = 0; i < starts.length; i += 1) {
           const s = starts[i]
-          const e = Math.max(s + 0.05, ends[i])
+          const e = Math.max(s + SEGMENT_SMOOTH_EPSILON, ends[i])
           const w = weights[i]
           if (now >= e) {
             progressed += w
@@ -126,6 +216,7 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
       }
     }
   }, [currentIndex, lines])
+
 
   useEffect(() => {
     let raf: number | null = null
@@ -153,7 +244,7 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
           let progressed = 0
           for (let i = 0; i < starts.length; i += 1) {
             const s = starts[i]
-            const e = Math.max(s + 0.05, ends[i])
+            const e = Math.max(s + SEGMENT_SMOOTH_EPSILON, ends[i])
             const w = weights[i]
             if (now >= e) {
               progressed += w
@@ -177,12 +268,10 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
       // Critically damped-like spring with monotonic clamp: smooth but no overshoot/backward jump.
       const monotonicTarget = target >= current ? target : current
       const prevTs = lastTsRef.current ?? ts
-      const dt = Math.max(1 / 240, Math.min(0.05, (ts - prevTs) / 1000))
+      const dt = Math.max(DT_CLAMP_MIN, Math.min(DT_CLAMP_MAX, (ts - prevTs) / 1000))
       lastTsRef.current = ts
-      const k = 220
-      const c = 30
       const x = monotonicTarget - current
-      const a = k * x - c * velocityRef.current
+      const a = FILL_SPRING_K * x - FILL_SPRING_C * velocityRef.current
       velocityRef.current += a * dt
       let next = current + velocityRef.current * dt
       if (next < current) {
@@ -204,25 +293,25 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
       if (timing) {
         const now = getAudioCurrentTime()
         const { starts, ends, revealStarts } = timing
-        const liftMax = 1.2
         for (let i = 0; i < starts.length; i += 1) {
           const wEl = wordLiftRefs.current[i]
           const bEl = wordBaseLiftRefs.current[i]
           if (!wEl) continue
           const s = starts[i]
-          const e = Math.max(s + 0.05, ends[i])
+          const e = Math.max(s + SEGMENT_SMOOTH_EPSILON, ends[i])
           let p = 0
           if (now >= e) {
             p = 1
           } else if (now > s) {
             p = (now - s) / (e - s)
-            p = p * p * (3 - 2 * p)
+            // ease-out cubic: 非线性上浮
+            p = 1 - Math.pow(1 - p, 3)
           }
-          const transform = `translateY(${(-liftMax * p).toFixed(3)}px)`
+          const transform = `translateY(${(-WORD_LIFT_MAX * p).toFixed(3)}px)`
           wEl.style.transform = transform
           if (bEl) {
             const baseP = next > revealStarts[i] ? p : 0
-            bEl.style.transform = `translateY(${(-liftMax * baseP).toFixed(3)}px)`
+            bEl.style.transform = `translateY(${(-WORD_LIFT_MAX * baseP).toFixed(3)}px)`
           }
         }
       }
@@ -233,6 +322,9 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
       if (raf !== null) cancelAnimationFrame(raf)
     }
   }, [])
+
+  // 间奏刚结束时标记，在 currentIndex 变化时触发补位动画
+
   const windowStart = Math.max(0, currentIndex >= 0 ? currentIndex - 8 : 0)
   const windowEnd = Math.min(lines.length, currentIndex >= 0 ? currentIndex + 9 : 16)
   const visibleLines = lines.slice(windowStart, windowEnd)
@@ -248,11 +340,14 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
     )
   }
 
-  // 非同步歌词：纯文本显示
-  if (!lyrics.synced || lines.length === 0) {
+  // 纯文本歌词（内容无有效时间戳）
+  if (lines.length === 0) {
     return (
       <div className="h-full overflow-y-auto px-6 py-8 scrollbar-hide">
-        <p className="whitespace-pre-line text-base leading-7 text-white/70">
+        <p
+          className="whitespace-pre-line text-white/70"
+          style={{ fontFamily: LYRIC_FONT_FAMILY }}
+        >
           {lyrics.content || "暂无歌词"}
         </p>
       </div>
@@ -269,87 +364,148 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
         }}
       >
         <div className="relative overflow-hidden px-8 pt-[14vh] pb-[10vh]">
-          <AnimatePresence initial={false}>
-            {preludeInterlude && (
+          <motion.div animate={scrollAnimate} transition={scrollTransition}>
+            {/* 前奏点阵：作为首行前的一个额外行 */}
+            {hasDots && dotsAfterIndex === -1 && (
               <motion.div
-                key={`prelude-${lyrics?.id ?? "none"}`}
-                className="pointer-events-none absolute left-8 top-[calc(14vh+4px)] z-10 flex h-[92px] w-[calc(100%-4rem)] items-center justify-start"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0 } }}
+                key={`prelude-dots-${lyrics?.id ?? "none"}`}
+                className="flex items-center overflow-hidden"
+                style={{ transformOrigin: "center center" }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{
+                  opacity: 1,
+                  height: dotsExiting ? 0 : LYRIC_ROW_HEIGHT,
+                }}
+                transition={{
+                  duration: dotsExiting ? exitDuration : 0.3,
+                  ease: "easeInOut",
+                }}
               >
-                <div className="nowplaying-interlude-breathe relative inline-block whitespace-nowrap text-[2.3rem] font-extrabold leading-none tracking-[0.18em]">
+                <motion.div
+                  className="relative inline-block whitespace-nowrap text-[2.3rem] font-extrabold leading-none tracking-[0.18em]"
+                  style={{ transformOrigin: "center center" }}
+                  animate={
+                    dotsExiting
+                      ? { scale: [1, INTERLUDE_DOT_EXIT_PEAK, 0] }
+                      : {
+                          opacity: [0.35, 0.9, 0.35],
+                          scale: [INTERLUDE_DOT_SCALE_MIN, INTERLUDE_DOT_SCALE_MAX, INTERLUDE_DOT_SCALE_MIN],
+                        }
+                  }
+                  transition={
+                    dotsExiting
+                      ? { duration: exitDuration, ease: "easeInOut" }
+                      : { duration: INTERLUDE_DOT_BREATHE_DURATION, repeat: Infinity, ease: "easeInOut" }
+                  }
+                >
                   {[0, 1, 2].map((dotIndex) => {
                     const filled = (interludeProgress ?? 0) >= (dotIndex + 1) / 3
                     return (
                       <span
                         key={dotIndex}
                         className={`mx-[0.138em] inline-block h-[0.34em] w-[0.34em] rounded-full align-middle transition-colors duration-150 ${
-                          filled
-                            ? "bg-white"
-                            : "bg-white/50"
+                          filled ? "bg-white" : "bg-white/50"
                         }`}
                       />
                     )
                   })}
-                </div>
+                </motion.div>
               </motion.div>
             )}
-          </AnimatePresence>
-          <motion.div
-            animate={{
-              y: currentIndex >= 0 ? -(currentIndex * LYRIC_ROW_HEIGHT) : 0,
-            }}
-            transition={{
-              type: "spring",
-              stiffness: 155,
-              damping: 24,
-              mass: 0.82,
-            }}
-          >
             {topSpacer > 0 ? <div style={{ height: topSpacer }} /> : null}
             {visibleLines.map((line, offset) => {
               const index = windowStart + offset
-              let distance = index - currentIndex
-              if (
-                interludeActive &&
-                interludeAfterIndex === index &&
-                currentLineProgress >= 0.995
-              ) {
-                // 逐字接近完成后再降级当前句，避免“还没走完就消失”
-                distance = 1
-              }
+              const distance = index - currentIndex
               const absDistance = Math.abs(distance)
 
-              return (
-                <div key={`${line.time}-${index}`}>
+              // 句间点阵：在 interludeAfterIndex 和 interludeAfterIndex+1 之间插入额外行
+              const insertDotsBefore = hasDots && dotsAfterIndex !== null && dotsAfterIndex >= 0 && index === dotsAfterIndex + 1
+
+              const elements: React.ReactNode[] = []
+
+              if (insertDotsBefore) {
+                elements.push(
+                  <motion.div
+                    key={`interlude-dots-${lyrics?.id ?? "x"}-${index}`}
+                    className="flex items-center overflow-hidden"
+                    style={{ transformOrigin: "center center" }}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{
+                      opacity: 1,
+                      height: dotsExiting ? 0 : LYRIC_ROW_HEIGHT,
+                    }}
+                    transition={{
+                      duration: dotsExiting ? exitDuration : 0.3,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <motion.div
+                      className="relative inline-block whitespace-nowrap text-[2.3rem] font-extrabold leading-none tracking-[0.18em]"
+                      style={{ transformOrigin: "center center" }}
+                      animate={
+                        dotsExiting
+                          ? { scale: [1, INTERLUDE_DOT_EXIT_PEAK, 0] }
+                          : {
+                              opacity: [0.35, 0.9, 0.35],
+                              scale: [INTERLUDE_DOT_SCALE_MIN, INTERLUDE_DOT_SCALE_MAX, INTERLUDE_DOT_SCALE_MIN],
+                            }
+                      }
+                      transition={
+                        dotsExiting
+                          ? { duration: exitDuration, ease: "easeInOut" }
+                          : { duration: INTERLUDE_DOT_BREATHE_DURATION, repeat: Infinity, ease: "easeInOut" }
+                      }
+                    >
+                      {[0, 1, 2].map((dotIndex) => {
+                        const filled = (interludeProgress ?? 0) >= (dotIndex + 1) / 3
+                        return (
+                          <span
+                            key={dotIndex}
+                            className={`mx-[0.138em] inline-block h-[0.34em] w-[0.34em] rounded-full align-middle transition-colors duration-150 ${
+                              filled ? "bg-white" : "bg-white/50"
+                            }`}
+                          />
+                        )
+                      })}
+                    </motion.div>
+                  </motion.div>
+                )
+              }
+
+              elements.push(
+                <div
+                  key={`line-${index}`}
+                  data-line-index={index}
+                >
                   <motion.button
-                    className="flex h-[92px] w-full items-center border-none bg-transparent text-left whitespace-nowrap"
+                    className="flex w-full items-center border-none bg-transparent text-left whitespace-nowrap"
+                    style={{ height: LYRIC_ROW_HEIGHT }}
                     animate={{
                       opacity:
                         distance === 0
                           ? 1
                           : absDistance === 1
-                            ? 0.52
+                            ? LINE_OPACITY_D1
                             : absDistance === 2
-                              ? 0.28
+                              ? LINE_OPACITY_D2
                               : absDistance === 3
-                                ? 0.16
-                                : 0.08,
+                                ? LINE_OPACITY_D3
+                                : LINE_OPACITY_D_FAR,
                     }}
                     transition={{
-                      duration: 0.18,
+                      duration: OPACITY_TRANSITION_DURATION,
                       ease: "easeOut",
                     }}
                     onClick={() => onSeek?.(line.time)}
                   >
                     <span
-                      className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap pb-1"
+                      className="block max-w-full whitespace-nowrap pb-1"
                       style={{
-                        fontWeight: distance === 0 ? 700 : 600,
+                        fontWeight: distance === 0 ? CURRENT_LINE_WEIGHT : OTHER_LINE_WEIGHT,
                         color: "white",
-                        fontSize: "2.6rem",
-                        lineHeight: 1.08,
+                        fontFamily: LYRIC_FONT_FAMILY,
+                        fontSize: LYRIC_FONT_SIZE,
+                        lineHeight: LYRIC_LINE_HEIGHT,
                       }}
                     >
                       {distance === 0 && line.words && line.words.length > 0 ? (
@@ -370,11 +526,12 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
                           ))}
                           <span
                             ref={activeFillRef}
-                            className="absolute left-0 top-0 overflow-hidden whitespace-pre text-white"
+                            className="absolute left-0 top-0 whitespace-pre text-white"
                             style={{
                               clipPath: "inset(0 100% 0 0)",
                               WebkitClipPath: "inset(0 100% 0 0)",
                               willChange: "clip-path",
+                              paddingBottom: "0.3em",
                             }}
                           >
                             {line.words.map((word, wordIndex) => (
@@ -399,38 +556,10 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
                     </span>
                   </motion.button>
 
-                  <AnimatePresence initial={false}>
-                    {interludeProgress !== null &&
-                      interludeAfterIndex === index &&
-                      currentLineProgress >= 0.9995 && (
-                      <motion.div
-                        key={`interlude-${lyrics?.id ?? "x"}-${index}`}
-                        className="pointer-events-none flex h-[92px] w-full items-center justify-start"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0, transition: { duration: 0 } }}
-                      >
-                        <div className="nowplaying-interlude-breathe relative inline-block whitespace-nowrap text-[2.3rem] font-extrabold leading-none tracking-[0.18em]">
-                          {[0, 1, 2].map((dotIndex) => {
-                            const filled = interludeProgress >= (dotIndex + 1) / 3
-                            return (
-                              <span
-                                key={dotIndex}
-                                className={`mx-[0.138em] inline-block h-[0.34em] w-[0.34em] rounded-full align-middle transition-colors duration-150 ${
-                                  filled
-                                    ? "bg-white"
-                                    : "bg-white/50"
-                                }`}
-                              />
-                            )
-                          })}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
                 </div>
               )
+
+              return <React.Fragment key={`${line.time}-${index}`}>{elements}</React.Fragment>
             })}
             {bottomSpacer > 0 ? <div style={{ height: bottomSpacer }} /> : null}
           </motion.div>

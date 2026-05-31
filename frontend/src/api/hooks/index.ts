@@ -13,3 +13,4 @@ export {
 } from './usePlaylists'
 export { useFavorites, useToggleFavorite } from './useFavorites'
 export { useLyrics, useSearchLyrics, useSaveLyrics } from './useLyrics'
+export { useSearch } from './useSearch'

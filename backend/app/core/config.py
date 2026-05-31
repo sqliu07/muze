@@ -9,6 +9,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 COVERS_DIR = DATA_DIR / "covers"
+ARTIST_IMAGES_DIR = DATA_DIR / "artist_images"
 DB_PATH = DATA_DIR / "muze.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 LOGS_DIR = Path(os.getenv("LOGS_DIR", DATA_DIR / "logs"))
@@ -19,6 +20,7 @@ SUPPORTED_FORMATS = {".mp3", ".flac", ".wav", ".aiff", ".m4a", ".ogg"}
 def ensure_dirs():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     COVERS_DIR.mkdir(parents=True, exist_ok=True)
+    ARTIST_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -55,7 +55,7 @@ export default function TrackRow({ track, index, isActive, onPlay }: TrackRowPro
       )}
 
       {/* 曲名 + 歌手名 */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-[2] min-w-0">
         <p className={cn('truncate text-sm', isActive && 'text-primary font-medium')}>
           {track.title}
         </p>
@@ -65,7 +65,7 @@ export default function TrackRow({ track, index, isActive, onPlay }: TrackRowPro
       </div>
 
       {/* 专辑名 */}
-      <div className="w-32 truncate text-sm text-muted-foreground hidden md:block">
+      <div className="flex-1 min-w-0 truncate text-sm text-muted-foreground hidden md:block">
         {track.album?.title ?? ''}
       </div>
 
