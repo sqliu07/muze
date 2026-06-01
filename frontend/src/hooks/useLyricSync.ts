@@ -203,7 +203,7 @@ export function useLyricSync(lyrics: LyricsOut | null | undefined): LyricSyncRes
     currentIndex,
     interludeProgress: interludeState?.progress ?? null,
     interludeAfterIndex: interludeState?.afterIndex ?? null,
-    interludeHideBefore: interludeState?.hideBefore ?? null,
+    interludeHideBefore: inSongInterludeState?.hideBefore ?? null,
     currentLineProgress,
   }
 }

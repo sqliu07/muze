@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
-import useAudioAnalyser from "@/hooks/useAudioAnalyser"
 import BassBlobs from "@/components/prototype/BassBlobs"
 import {
   ChevronDown,
@@ -153,7 +152,6 @@ function NowPlayingPage() {
 
   const coverUrl = currentTrack?.has_cover ? getTrackCoverUrl(currentTrack.id) : null
   const colors = useColorThief(coverUrl)
-  const { bassSmoothed } = useAudioAnalyser()
 
   const hasSearchedOnline = Boolean(
     lyrics?.source &&

@@ -13,7 +13,8 @@ import {
   fetchArtistImages,
   getArtistImageFetchStatus,
 } from '@/api/client'
-import type { WatchFolderOut, ScanResult, ArtistImageFetchStatus } from '@/types/api'
+import type { WatchFolderOut, ScanResult } from '@/types/api'
+import type { ArtistImageFetchStatus } from '@/api/client'
 import { DirectoryPicker } from '@/components/common/DirectoryPicker'
 
 export default function LibraryManagePage() {

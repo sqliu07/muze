@@ -146,7 +146,7 @@ export default function InterludeDemo() {
               mass: SCROLL_SPRING_MASS,
             }}
           >
-            {displayItems.map((item, displayIdx) => {
+            {displayItems.map((item) => {
               if (item.type === "dots") {
                 return (
                   <motion.div
