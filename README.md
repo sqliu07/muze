@@ -1,40 +1,55 @@
 # Muze
 
-Muze 是一个自托管本地音乐播放器，采用 **FastAPI + React + TypeScript**，支持本地媒体库扫描、专辑/歌手浏览、播放列表、歌词展示与 Docker 部署。
+Muze 是一个自托管本地音乐播放器，采用 **FastAPI + React + TypeScript**，支持本地媒体库扫描、多维浏览、逐字歌词动效与 Docker 一键部署。
 
-## 功能概览
+## 功能
 
-- 本地音乐库管理：递归扫描目录，写入 SQLite
-- 多维浏览：全部歌曲、专辑、歌手、播放列表、收藏
-- 播放控制：播放/暂停、上一首/下一首、进度拖拽、音量调节
-- 歌词能力：内嵌歌词、同名 `.lrc`、LDDC、lrclib、网易云 fallback
-- 歌词动效：Apple Music 风格的歌词跟随与高亮动画
-- 歌词规范化：扫描阶段自动进行繁体到简体转换（优先 OpenCC）
-- 前端体验：默认进入专辑页（`/albums`）
+**音乐库管理**
+- 递归扫描本地音乐目录，自动识别专辑、歌手、封面
+- 支持 FLAC / MP3 / AAC / OGG / WAV 等格式
+- 文件监听：新增/删除文件自动同步
+
+**浏览与播放**
+- 多维浏览：歌曲、专辑、歌手、播放列表、收藏
+- 播放控制：播放/暂停、上下曲、进度拖拽、音量调节
+- 播放模式：列表循环、单曲循环、随机播放
+
+**歌词**
+- 多源搜词：内嵌歌词 → 同名 `.lrc` → LDDC → lrclib → 网易云
+- 逐字同步：Apple Music 风格的高亮跟随与上浮动效
+- 间奏点阵：句间/前奏自动显示呼吸动画点阵
+- 联网搜词：支持 LDDC 候选选择、指定搜索、手动粘贴
+
+**视觉体验**
+- 四套主题：Light / Dark / Sepia / Nord、Rosé Pine
+- 专辑取色：封面主色提取，动态渐变背景
+- BassBlobs：音频驱动的有机色块动画（低频响应）
+
+**其他**
+- 歌词繁转简：扫描阶段自动 OpenCC 转换
+- WebSocket 文件变更通知
+- 全局快捷键：空格播放暂停、方向键快进快退
 
 ## 技术栈
 
-- 后端：FastAPI、SQLAlchemy、Mutagen
-- 前端：React、Vite、TypeScript、TanStack Query、Zustand
-- 数据库：SQLite
-- 容器：Docker（单容器，内置前端静态资源）
-- 第三方歌词库：LDDC（`3rdparty/LDDC` 子模块）
+| 层 | 技术 |
+|---|------|
+| 后端 | FastAPI、SQLAlchemy、Mutagen |
+| 前端 | React 18、Vite、TypeScript、TanStack Query、Zustand |
+| 动效 | Framer Motion、Canvas API、Web Audio API |
+| 数据库 | SQLite |
+| 歌词引擎 | LDDC（子模块）、lrclib、网易云 API |
+| 容器 | Docker（单镜像，内置前端静态资源） |
 
-## 目录结构
+## 快速开始
 
-```text
-.
-├─ backend/                  # FastAPI 后端
-├─ frontend/                 # React 前端
-├─ 3rdparty/LDDC/            # LDDC 子模块
-├─ .github/workflows/        # CI/CD
-├─ Dockerfile
-└─ start.sh
-```
+### 环境要求
 
-## 快速开始（本地开发）
+- Python 3.11+
+- Node.js 20+
+- git（含子模块支持）
 
-### 1) 拉取代码
+### 1) 克隆
 
 ```bash
 git clone <your-repo-url> muze
@@ -42,25 +57,25 @@ cd muze
 git submodule update --init --recursive
 ```
 
-### 2) 启动方式 A：一键启动
+### 2) 一键启动
 
 ```bash
 ./start.sh
 ```
 
-默认访问：
-
+访问：
 - 前端：`http://localhost:5173`
 - 后端：`http://localhost:8000`
+- API 文档：`http://localhost:8000/docs`
 
-### 3) 启动方式 B：手动启动
+### 3) 手动启动
 
 后端：
 
 ```bash
 cd backend
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
@@ -73,21 +88,25 @@ npm install
 npm run dev
 ```
 
+### 4) 导入音乐
+
+启动后，在「媒体库管理」页面添加本地音乐文件夹并扫描。
+
 ## Docker 部署
 
-### 构建镜像
+### 从源码构建
 
 ```bash
 docker build -t muze .
 ```
 
-### 从 Release 资产导入镜像（tar.gz）
+### 从 Release 导入
 
 ```bash
-docker load -i muze-<版本号>-<构建日期>-linux-amd64.tar.gz
+docker load -i muze-<版本>-<日期>-linux-amd64.tar.gz
 ```
 
-### 运行容器
+### 运行
 
 ```bash
 docker run -p 8000:8000 \
@@ -97,57 +116,60 @@ docker run -p 8000:8000 \
   muze
 ```
 
-部署说明：
+挂载说明：
 
-- `/app/data`：数据库、封面等数据目录
-- `/app/logs`：后端日志目录（可单独映射）
-- `/music`：宿主机音乐目录
+| 容器路径 | 用途 |
+|---------|------|
+| `/app/data` | 数据库、封面缓存 |
+| `/app/logs` | 应用日志 |
+| `/music` | 音乐文件目录 |
 
-## 日志与排障
+### 环境变量
 
-后端日志默认写入 `LOGS_DIR/muze.log`：
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `HOST` | `0.0.0.0` | 监听地址 |
+| `PORT` | `8000` | 监听端口 |
+| `DATA_DIR` | `/app/data` | 数据目录 |
+| `LOGS_DIR` | `/app/logs` | 日志目录 |
+| `LDDC_REPO_PATH` | `/app/3rdparty/LDDC` | LDDC 路径 |
 
-- 容器默认 `LOGS_DIR=/app/logs`
-- 非容器默认 `LOGS_DIR=<DATA_DIR>/logs`
+## 歌词来源策略
 
-与繁转简相关日志：
+1. 音频内嵌歌词（ID3 / Vorbis Comment）
+2. 同目录同名 `.lrc` 文件
+3. [LDDC](https://github.com/chenx6/LDDC)（逐字歌词优先）
+4. [lrclib](https://lrclib.net/)
+5. 网易云音乐（fallback）
 
-- 启动后首次转换会记录是否启用 OpenCC
-- 当歌曲名发生繁转简时，会记录：原始标题、转换后标题、文件路径
+LDDC 通过 git submodule 引入，位于 `3rdparty/LDDC`。运行时需确保该目录存在（克隆时加 `--recursive`）。
 
-## 歌词来源与策略
+## CI/CD
 
-获取顺序如下：
+推送 `v*` 或 `V*` 格式的 tag 会触发 `.github/workflows/release-image.yml`：
+- 构建 Docker 镜像并推送至 GHCR
+- 在 GitHub Release 发布可导入的 `tar.gz` 包
 
-1. 音频内嵌歌词
-2. 同目录 `.lrc`
-3. LDDC（逐字歌词优先）
-4. lrclib
-5. 网易云 fallback
+## 目录结构
 
-说明：
-
-- LDDC 通过 `git submodule` 引入，路径为 `3rdparty/LDDC`
-- 运行时默认读取 `LDDC_REPO_PATH`（容器默认 `/app/3rdparty/LDDC`）
-
-## CI/CD 与镜像发布
-
-工作流：`.github/workflows/release-image.yml`
-
-触发条件：
-
-- 推送 tag：`v*` 或 `V*`
-
-行为：
-
-- 构建并推送 GHCR 镜像
-- 在 GitHub Release 上传可导入镜像包（`tar.gz` + `sha256`）
+```text
+.
+├── backend/                  # FastAPI 后端
+│   └── app/
+│       └── api/              # API 路由（tracks, albums, artists, lyrics...）
+├── frontend/                 # React 前端
+│   └── src/
+│       ├── components/       # 组件（nowplaying, player, layout...）
+│       ├── hooks/            # 自定义 Hook（useAudio, useLyricSync...）
+│       └── pages/            # 页面
+├── 3rdparty/LDDC/            # LDDC 子模块
+├── .github/workflows/        # CI/CD
+├── Dockerfile
+└── start.sh
+```
 
 ## 许可证
 
-本项目采用 **GPL-3.0**，见 [`LICENSE`](./LICENSE)。
+本项目采用 **GPL-3.0**，见 [LICENSE](./LICENSE)。
 
-第三方说明：
-
-- LDDC 以子模块方式引入，许可证为 GPL-3.0
-- 分发包含 LDDC 的制品时，请遵循相应许可证义务
+LDDC 以子模块方式引入，同样采用 GPL-3.0。分发包含 LDDC 的制品时请遵循相应许可证义务。
