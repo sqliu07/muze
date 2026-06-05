@@ -64,6 +64,7 @@ export interface LyricsOut {
   source: string | null
   content: string | null
   synced: boolean
+  translated_content: string | null
   updated_at: string
   original_content: string | null
   original_source: string | null
@@ -78,6 +79,7 @@ export interface LyricsUpdate {
   content: string
   source?: string
   synced?: boolean
+  translated_content?: string | null
 }
 
 export interface LyricsCandidate {
@@ -86,6 +88,7 @@ export interface LyricsCandidate {
   word_level: boolean
   preview: string
   content: string
+  translated_content: string | null
   song_title: string
   song_artist: string
 }
@@ -153,6 +156,7 @@ export interface TracksParams {
 
 export interface AlbumsParams {
   sort?: string
+  order?: 'asc' | 'desc'
   artist_id?: number
 }
 

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import COVERS_DIR
 from app.core.database import get_db
-from app.models.models import Album, Track
+from app.models.models import Album, Artist, Track
 from app.schemas.schemas import AlbumDetailOut, AlbumOut, TrackOut
 
 router = APIRouter(prefix="/api/albums", tags=["albums"])
@@ -91,6 +91,7 @@ def _track_to_dict(track: Track) -> dict:
 @router.get("", response_model=list[AlbumOut])
 def list_albums(
     sort: str = Query("title"),
+    order: str = Query("asc"),
     artist_id: int = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -100,7 +101,16 @@ def list_albums(
     if artist_id is not None:
         query = query.filter(Album.artist_id == artist_id)
 
-    sort_col = getattr(Album, sort, Album.title)
+    # 特殊处理：按艺术家名排序需要 JOIN
+    if sort == "artist":
+        query = query.outerjoin(Album.artist)
+        sort_col = Artist.name.asc()
+        if order == "desc":
+            sort_col = Artist.name.desc()
+    else:
+        sort_col = getattr(Album, sort, Album.title)
+        if order == "desc":
+            sort_col = sort_col.desc()
     query = query.order_by(sort_col)
 
     albums = query.all()
