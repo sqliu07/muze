@@ -12,5 +12,6 @@ export {
   useReorderPlaylist,
 } from './usePlaylists'
 export { useFavorites, useToggleFavorite } from './useFavorites'
-export { useLyrics, useSearchLyrics, useSaveLyrics } from './useLyrics'
+export { useLyrics, useSearchLyrics, useSaveLyrics, useTranslateLyrics } from './useLyrics'
 export { useSearch } from './useSearch'
+export { useSettings, useUpdateSettings } from './useSettings'
