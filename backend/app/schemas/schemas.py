@@ -116,6 +116,7 @@ class LyricsOut(BaseModel):
     source: Optional[str] = None
     content: Optional[str] = None
     synced: bool = False
+    translated_content: Optional[str] = None
     original_content: Optional[str] = None
     original_source: Optional[str] = None
     updated_at: datetime
@@ -133,6 +134,7 @@ class LyricsUpdate(BaseModel):
     content: str
     source: Optional[str] = None
     synced: Optional[bool] = None
+    translated_content: Optional[str] = None
 
 
 class LyricsCandidateOut(BaseModel):
@@ -141,6 +143,7 @@ class LyricsCandidateOut(BaseModel):
     word_level: bool = False
     preview: str
     content: str
+    translated_content: Optional[str] = None
     song_title: str = ""
     song_artist: str = ""
 

@@ -6,9 +6,11 @@ interface UIState {
   theme: ThemeName
   sidebarOpen: boolean
   nowPlayingOpen: boolean
+  showTranslation: boolean
   setTheme: (theme: ThemeName) => void
   setSidebarOpen: (open: boolean) => void
   setNowPlayingOpen: (open: boolean) => void
+  toggleTranslation: () => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -17,18 +19,21 @@ export const useUIStore = create<UIState>()(
       theme: 'light',
       sidebarOpen: true,
       nowPlayingOpen: false,
+      showTranslation: false,
       setTheme: (theme) => {
         applyTheme(theme)
         set({ theme })
       },
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setNowPlayingOpen: (open) => set({ nowPlayingOpen: open }),
+      toggleTranslation: () => set((s) => ({ showTranslation: !s.showTranslation })),
     }),
     {
       name: 'muze-ui',
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
+        showTranslation: state.showTranslation,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import sys
+import time
 import types
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,8 @@ from typing import Optional
 
 import httpx
 from mutagen import File as MutagenFile
+
+from app.services.settings import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ class LyricsResult:
     content: str
     source: str  # "embedded" | "lrc" | "lrclib" | "netease"
     synced: bool
+    translated_content: Optional[str] = None
 
 
 @dataclass
@@ -47,6 +51,7 @@ class LDDCCandidate:
     synced: bool
     song_title: str = ""
     song_artist: str = ""
+    translated_content: Optional[str] = None
 
 
 _LIVE_RE = re.compile(r"(?i)\bLIVE\b|现场|演唱会|音乐会|live\s*版|现场版")
@@ -211,15 +216,15 @@ def _collect_lddc_results_in_process(
     repo_path: Path,
     keyword: str,
     max_candidates: int = 8,
-) -> list[tuple[str, str, str, str]]:
-    """返回 (content, source, song_title, song_artist) 元组列表。"""
+) -> list[tuple[str, str, str, str, Optional[str]]]:
+    """返回 (content, source, song_title, song_artist, translated_content) 元组列表。"""
     inserted = False
     repo_path_str = str(repo_path)
     if repo_path_str not in sys.path:
         sys.path.insert(0, repo_path_str)
         inserted = True
 
-    collected: list[tuple[str, str, str, str]] = []
+    collected: list[tuple[str, str, str, str, Optional[str]]] = []
     seen: set[str] = set()
 
     try:
@@ -275,6 +280,19 @@ def _collect_lddc_results_in_process(
                             lyrics_format=models.LyricsFormat.VERBATIMLRC,
                             offset=0,
                         )
+                        # 获取翻译歌词
+                        translated_text = None
+                        try:
+                            ts_text = converter.convert2(
+                                lyrics=lyrics,
+                                langs=["ts"],
+                                lyrics_format=models.LyricsFormat.LRC,
+                                offset=0,
+                            )
+                            if ts_text and ts_text.strip():
+                                translated_text = ts_text.strip()
+                        except Exception:
+                            pass
                     except Exception:
                         logger.debug("LDDC 转换歌词失败: source=%s keyword=%s", source_name, keyword, exc_info=True)
                         continue
@@ -283,7 +301,7 @@ def _collect_lddc_results_in_process(
                         if text_stripped in seen:
                             continue
                         seen.add(text_stripped)
-                        collected.append((text_stripped, f"lddc:{source_name.lower()}", final_title, final_artist))
+                        collected.append((text_stripped, f"lddc:{source_name.lower()}", final_title, final_artist, translated_text))
                         if len(collected) >= max_candidates:
                             return collected
     finally:
@@ -312,17 +330,17 @@ def search_lddc_word_lyrics(title: str, artist: Optional[str] = None) -> Optiona
 
     # 按评分排序，取最高分
     scored = []
-    for content, source, st_title, st_artist in results:
+    for content, source, st_title, st_artist, translated_content in results:
         score = _score_candidate(st_title, st_artist, title, artist, source, content)
-        scored.append((score, content, source))
+        scored.append((score, content, source, translated_content))
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    best_score, best_content, best_source = scored[0]
+    best_score, best_content, best_source, best_translated = scored[0]
     logger.info(
         "LDDC 最佳匹配: %s - %s (score=%.1f, source=%s)",
         title, artist, best_score, best_source,
     )
-    return LyricsResult(content=best_content, source=best_source, synced=True)
+    return LyricsResult(content=best_content, source=best_source, synced=True, translated_content=best_translated)
 
 
 def search_lddc_candidates(
@@ -343,10 +361,10 @@ def search_lddc_candidates(
         return []
 
     # 评分排序
-    scored: list[tuple[float, str, str, str, str]] = []
-    for content, source, st_title, st_artist in raw_results:
+    scored: list[tuple[float, str, str, str, str, Optional[str]]] = []
+    for content, source, st_title, st_artist, translated_content in raw_results:
         score = _score_candidate(st_title, st_artist, title, artist, source, content)
-        scored.append((score, content, source, st_title, st_artist))
+        scored.append((score, content, source, st_title, st_artist, translated_content))
     scored.sort(key=lambda x: x[0], reverse=True)
 
     candidates = [
@@ -356,8 +374,9 @@ def search_lddc_candidates(
             synced=True,
             song_title=st_title,
             song_artist=st_artist,
+            translated_content=translated_content,
         )
-        for score, content, source, st_title, st_artist in scored[:limit]
+        for score, content, source, st_title, st_artist, translated_content in scored[:limit]
     ]
     logger.info("LDDC 候选搜索完成: %s - %s, 命中 %d 条（已排序）", title, artist, len(candidates))
     return candidates
@@ -503,12 +522,193 @@ def search_netease(title: str, artist: Optional[str] = None) -> Optional[LyricsR
         if not lyric_text.strip():
             return None
 
+        # 获取翻译歌词
+        translated_text = None
+        tlyric_obj = lrc_data.get("tlyric", {})
+        tlyric_text = tlyric_obj.get("lyric", "")
+        if tlyric_text and tlyric_text.strip():
+            translated_text = tlyric_text.strip()
+
         synced = bool(_LRC_TIMESTAMP_RE.search(lyric_text))
-        return LyricsResult(content=lyric_text.strip(), source="netease", synced=synced)
+        return LyricsResult(content=lyric_text.strip(), source="netease", synced=synced, translated_content=translated_text)
 
     except Exception:
         logger.exception("网易云搜索失败: %s - %s", title, artist)
 
+    return None
+
+
+# ── 歌词翻译 ──────────────────────────────────────────────────────────────────
+
+_GOOGLE_TRANSLATE_API = "https://translate.googleapis.com/translate_a/single"
+_TRANSLATE_SEP = " ||| "
+
+
+def _parse_lrc_lines(content: str) -> list[tuple[str, str]]:
+    """解析 LRC 内容，返回 (时间戳, 文本) 列表。文本中去除内嵌逐字时间戳。"""
+    lrc_re = re.compile(r"^\[(\d{1,2}:\d{2}(?:[.:]\d{1,3})?)\](.*)$")
+    embed_ts_re = re.compile(r"\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]")
+    lines: list[tuple[str, str]] = []
+    for raw in content.strip().splitlines():
+        m = lrc_re.match(raw.strip())
+        if m:
+            ts, text = m.group(1), m.group(2).strip()
+            # 去掉文本中的内嵌逐字时间戳（如 "Lose [00:00.970]My" → "Lose My"）
+            text = embed_ts_re.sub("", text).strip()
+            if text:
+                lines.append((ts, text))
+    return lines
+
+
+def _build_translated_lrc(lines: list[tuple[str, str]], translated: list[str]) -> str:
+    """将翻译行与原始时间戳拼接为 LRC 格式。"""
+    return "\n".join(f"[{ts}]{trans}" for (ts, _), trans in zip(lines, translated))
+
+
+def _translate_deepseek(texts: list[str], src: str = "en", tgt: str = "zh-CN") -> Optional[list[str]]:
+    """调用 DeepSeek API 逐行翻译歌词。"""
+    api_key = get_setting("deepseek_api_key")
+    if not api_key:
+        return None
+
+    # 构造 prompt：逐行翻译，保持行数一致
+    lines_repr = "\n".join(f"{i+1}. {t}" for i, t in enumerate(texts))
+    prompt = (
+        f"Translate the following {len(texts)} song lyrics lines from {src} to {tgt}.\n"
+        f"Rules:\n"
+        f"- Output EXACTLY {len(texts)} lines, no more, no less\n"
+        f"- Translate EVERY line, including titles, artist names, and metadata\n"
+        f"- Do NOT skip, merge, or add any lines\n"
+        f"- Do NOT add numbers, explanations, or any extra text\n"
+        f"- Preserve the meaning and emotion of the lyrics\n\n"
+        f"{lines_repr}"
+    )
+
+    try:
+        resp = httpx.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            json={
+                "model": "deepseek-chat",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3,
+                "max_tokens": 4096,
+            },
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=30,
+        )
+        if resp.status_code == 429:
+            logger.warning("DeepSeek 限流 (429)，稍后重试")
+            time.sleep(10)
+            resp = httpx.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                json={
+                    "model": "deepseek-chat",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 4096,
+                },
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                timeout=30,
+            )
+        if resp.status_code != 200:
+            logger.warning("DeepSeek 返回 %d: %s", resp.status_code, resp.text[:200])
+            return None
+
+        result = resp.json()
+        content = result["choices"][0]["message"]["content"]
+        translated = [line.strip() for line in content.strip().splitlines() if line.strip()]
+
+        # 清理行号前缀、内嵌时间戳、中文字符间多余空格
+        embed_ts_re = re.compile(r"\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]")
+        cleaned = []
+        for line in translated:
+            m = re.match(r"^\d+\.\s*(.*)", line)
+            line = m.group(1) if m else line
+            # 去掉 LLM 输出中可能残留的内嵌时间戳
+            line = embed_ts_re.sub("", line).strip()
+            # 去掉中文字符之间的空格
+            line = re.sub(r"(?<=[一-鿿])[\s\u00a0\u3000]+(?=[一-鿿])", "", line)
+            cleaned.append(line)
+
+        if len(cleaned) != len(texts):
+            logger.warning("DeepSeek 行数不匹配: 原文 %d, 翻译 %d", len(texts), len(cleaned))
+            while len(cleaned) < len(texts):
+                cleaned.append("")
+            cleaned = cleaned[: len(texts)]
+
+        logger.info("DeepSeek 翻译: %d 条", len(cleaned))
+        return cleaned
+    except Exception:
+        logger.exception("DeepSeek 翻译失败")
+        return None
+
+
+def _translate_google(texts: list[str], src: str = "en", tgt: str = "zh-CN") -> Optional[list[str]]:
+    """调用 Google Translate 非官方 API 批量翻译（兜底）。"""
+    joined = _TRANSLATE_SEP.join(texts)
+    try:
+        resp = httpx.get(
+            _GOOGLE_TRANSLATE_API,
+            params={"client": "gtx", "sl": src, "tl": tgt, "dt": "t", "q": joined},
+            timeout=15,
+        )
+        if resp.status_code == 429:
+            logger.warning("Google Translate 限流 (429)，稍后重试")
+            time.sleep(10)
+            resp = httpx.get(
+                _GOOGLE_TRANSLATE_API,
+                params={"client": "gtx", "sl": src, "tl": tgt, "dt": "t", "q": joined},
+                timeout=15,
+            )
+        if resp.status_code != 200:
+            logger.warning("Google Translate 返回 %d", resp.status_code)
+            return None
+
+        result = resp.json()
+        translated_text = "".join(seg[0] for seg in result[0] if seg and seg[0])
+        translated = [t.strip() for t in translated_text.split("|||")]
+        translated = [t for t in translated if t]
+
+        if len(translated) != len(texts):
+            logger.warning("Google Translate 行数不匹配: 原文 %d, 翻译 %d", len(texts), len(translated))
+            while len(translated) < len(texts):
+                translated.append("")
+            translated = translated[: len(texts)]
+
+        logger.info("Google Translate 翻译: %d 条", len(translated))
+        return translated
+    except Exception:
+        logger.exception("Google Translate 翻译失败")
+        return None
+
+
+def translate_lyrics(content: str, src: str = "en", tgt: str = "zh-CN") -> Optional[str]:
+    """将 LRC 歌词翻译为目标语言，保留时间戳。
+
+    策略：DeepSeek（优先）→ Google Translate（兜底）。
+    """
+    lines = _parse_lrc_lines(content)
+    if not lines:
+        logger.debug("翻译：无有效歌词行")
+        return None
+
+    texts = [text for _, text in lines]
+
+    # DeepSeek（优先）
+    translated = _translate_deepseek(texts, src=src, tgt=tgt)
+    if translated:
+        return _build_translated_lrc(lines, translated)
+
+    # Google Translate（兜底）
+    logger.info("DeepSeek 不可用，回退到 Google Translate")
+    translated = _translate_google(texts, src=src, tgt=tgt)
+    if translated:
+        return _build_translated_lrc(lines, translated)
+
+    logger.warning("所有翻译源均失败")
     return None
 
 

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getLyrics, searchLyrics, saveLyrics, restoreLyrics, searchLddcCandidates } from '@/api/client'
+import { getLyrics, searchLyrics, saveLyrics, restoreLyrics, searchLddcCandidates, translateLyrics } from '@/api/client'
 import type { LyricsSearch, LyricsUpdate } from '@/types/api'
 import type { SearchLyricsOptions } from '@/api/client'
 
@@ -61,5 +61,15 @@ export function useSearchLddcCandidates() {
       payload: LyricsSearch
       limit?: number
     }) => searchLddcCandidates(trackId, payload, limit),
+  })
+}
+
+export function useTranslateLyrics() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ trackId, force }: { trackId: number; force?: boolean }) => translateLyrics(trackId, force),
+    onSuccess: (data, { trackId }) => {
+      queryClient.setQueryData(['lyrics', trackId], data)
+    },
   })
 }

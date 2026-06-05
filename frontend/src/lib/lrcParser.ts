@@ -2,6 +2,7 @@ export interface LyricLine {
   time: number
   text: string
   words?: LyricWord[]
+  translation?: string
 }
 
 export interface LyricWord {
@@ -66,6 +67,36 @@ export function parseLrc(content: string): LyricLine[] {
 
   lines.sort((a, b) => a.time - b.time)
   return lines
+}
+
+/**
+ * 将翻译歌词按时间戳匹配到原始歌词行
+ * @param originalLines 原始歌词行（已解析）
+ * @param translatedContent 翻译歌词 LRC 格式字符串
+ * @param threshold 时间差阈值（秒），默认 1.0
+ * @returns 带有 translation 字段的原始歌词行
+ */
+export function matchTranslations(
+  originalLines: LyricLine[],
+  translatedContent: string,
+  threshold = 1.0,
+): LyricLine[] {
+  const translatedLines = parseLrc(translatedContent)
+  if (translatedLines.length === 0) return originalLines
+
+  return originalLines.map((line) => {
+    // 找时间戳最接近的翻译行
+    let bestMatch: string | undefined
+    let bestDiff = Infinity
+    for (const tl of translatedLines) {
+      const diff = Math.abs(tl.time - line.time)
+      if (diff < bestDiff && diff <= threshold) {
+        bestDiff = diff
+        bestMatch = tl.text
+      }
+    }
+    return bestMatch ? { ...line, translation: bestMatch } : line
+  })
 }
 
 /**

@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { usePlayerStore } from "@/store/playerStore"
-import { parseLrc, getCurrentLineIndex } from "@/lib/lrcParser"
+import { parseLrc, getCurrentLineIndex, matchTranslations } from "@/lib/lrcParser"
 import type { LyricLine } from "@/lib/lrcParser"
 import type { LyricsOut } from "@/types/api"
 import {
@@ -26,7 +26,7 @@ import {
 } from "@/config/lyrics"
 
 export interface LyricSyncResult {
-  lines: { time: number; text: string; words?: { start: number; text: string }[] }[]
+  lines: { time: number; text: string; words?: { start: number; text: string }[]; translation?: string }[]
   currentIndex: number
   interludeProgress: number | null
   interludeAfterIndex: number | null
@@ -34,13 +34,21 @@ export interface LyricSyncResult {
   currentLineProgress: number
 }
 
-export function useLyricSync(lyrics: LyricsOut | null | undefined): LyricSyncResult {
+export function useLyricSync(
+  lyrics: LyricsOut | null | undefined,
+  showTranslation = false,
+): LyricSyncResult {
   const currentTime = usePlayerStore((s) => s.currentTime)
 
   const timingLines = useMemo(() => {
     if (!lyrics?.content) return []
-    return parseLrc(lyrics.content)
-  }, [lyrics?.content])
+    const parsed = parseLrc(lyrics.content)
+    // 当启用翻译且有翻译内容时，按时间戳匹配翻译行
+    if (showTranslation && lyrics.translated_content) {
+      return matchTranslations(parsed, lyrics.translated_content)
+    }
+    return parsed
+  }, [lyrics?.content, lyrics?.translated_content, showTranslation])
 
   const { lines, timingToVisible } = useMemo(() => {
     const visibleLines: LyricLine[] = []

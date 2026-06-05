@@ -88,6 +88,7 @@ class Lyrics(Base):
     source: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     synced: Mapped[bool] = mapped_column(default=False)
+    translated_content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     original_content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     original_source: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     updated_at: Mapped[datetime] = mapped_column(
@@ -107,6 +108,7 @@ class LyricsSearchCache(Base):
     source: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     synced: Mapped[bool] = mapped_column(default=False)
+    translated_content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow, onupdate=datetime.utcnow
     )

@@ -27,6 +27,7 @@ from app.api.favorites import router as favorites_router
 from app.api.ws import router as ws_router
 from app.api.lyrics import router as lyrics_router
 from app.api.search import router as search_router
+from app.api.settings import router as settings_router
 
 from app.api.ws import manager
 from app.services.watcher import start_watcher, stop_watcher
@@ -41,6 +42,8 @@ def _migrate_schema() -> None:
     migrations = [
         ("lyrics", "original_content", "TEXT"),
         ("lyrics", "original_source", "VARCHAR(20)"),
+        ("lyrics", "translated_content", "TEXT"),
+        ("lyrics_search_cache", "translated_content", "TEXT"),
     ]
 
     with engine.begin() as conn:
@@ -106,6 +109,7 @@ app.include_router(favorites_router)
 app.include_router(ws_router)
 app.include_router(lyrics_router)
 app.include_router(search_router)
+app.include_router(settings_router)
 
 
 @app.get("/api/health")

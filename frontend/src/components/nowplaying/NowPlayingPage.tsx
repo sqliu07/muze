@@ -529,7 +529,7 @@ function NowPlayingPage() {
                   transition={{ duration: 0.3 }}
                   className="flex w-3/5 flex-col min-h-0"
                 >
-                  <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} />
+                  <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} trackId={currentTrack?.id} onFeedback={setTransientFeedback} />
                 </motion.div>
               )}
             </div>
@@ -630,7 +630,7 @@ function NowPlayingPage() {
                   transition={{ duration: 0.3 }}
                   className="flex-1 min-h-0"
                 >
-                  <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} />
+                  <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} trackId={currentTrack?.id} onFeedback={setTransientFeedback} />
                 </motion.div>
               )}
             </div>
@@ -840,6 +840,7 @@ function NowPlayingPage() {
                             content: c.content,
                             source: c.source,
                             synced: c.synced,
+                            translated_content: c.translated_content,
                           },
                         })
                         .then(() => setTransientFeedback("已应用所选歌词"))

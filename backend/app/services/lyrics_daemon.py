@@ -1,4 +1,4 @@
-"""歌词后台守护进程 — 自动搜索逐字歌词。"""
+"""歌词后台守护进程 — 自动搜索逐字歌词和翻译。"""
 from __future__ import annotations
 
 import logging
@@ -12,7 +12,10 @@ from app.core.database import SessionLocal
 from app.models.models import Lyrics, Track
 from app.services.lyrics_service import (
     has_word_level_timestamps,
+    search_lddc_word_lyrics,
     search_online_lyrics,
+    search_netease,
+    translate_lyrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,81 @@ def batch_search_word_lyrics(db: Session, limit: int = _BATCH_LIMIT) -> int:
     return updated
 
 
+def _fetch_translation(
+    title: str, artist: str | None, source: str | None, content: str | None
+) -> str | None:
+    """根据歌词来源选择最佳翻译获取策略。
+
+    优先级：LDDC 重取 → 网易云 tlyric → Google Translate 兜底。
+    """
+    # LDDC 来源：用 LDDC 重新获取（更精确的匹配）
+    if source and source.startswith("lddc"):
+        try:
+            result = search_lddc_word_lyrics(title, artist)
+            if result and result.translated_content:
+                logger.info("翻译来源: LDDC (%s - %s)", title, artist)
+                return result.translated_content
+        except Exception:
+            logger.debug("LDDC 翻译回填失败: %s - %s", title, artist, exc_info=True)
+
+    # 网易云 tlyric
+    try:
+        result = search_netease(title, artist)
+        if result and result.translated_content:
+            logger.info("翻译来源: 网易云 (%s - %s)", title, artist)
+            return result.translated_content
+    except Exception:
+        logger.debug("网易云翻译回填失败: %s - %s", title, artist, exc_info=True)
+
+    # 兜底：用 Google Translate 翻译歌词内容
+    if content:
+        try:
+            translated = translate_lyrics(content)
+            if translated:
+                logger.info("翻译来源: Google Translate (%s - %s)", title, artist)
+                return translated
+        except Exception:
+            logger.debug("Google Translate 回填失败: %s - %s", title, artist, exc_info=True)
+
+    return None
+
+
+def batch_backfill_translations(db: Session, limit: int = _BATCH_LIMIT) -> int:
+    """批量为缺少翻译的歌词补充翻译，返回成功更新数。"""
+    candidates = (
+        db.query(Lyrics)
+        .filter(
+            Lyrics.content != None,
+            Lyrics.translated_content == None,
+        )
+        .limit(limit)
+        .all()
+    )
+
+    updated = 0
+    for lyrics in candidates:
+        track = db.query(Track).filter_by(id=lyrics.track_id).first()
+        if not track:
+            continue
+
+        artist_name = track.artist.name if track.artist else None
+        translated = _fetch_translation(track.title, artist_name, lyrics.source, lyrics.content)
+        if not translated:
+            logger.debug("翻译回填无结果: %s - %s (%s)", track.title, artist_name, lyrics.source)
+            continue
+
+        lyrics.translated_content = translated
+        updated += 1
+        logger.info("已补充翻译: %s - %s (%s)", track.title, artist_name, lyrics.source)
+
+        time.sleep(_REQUEST_DELAY)
+
+    if updated:
+        db.commit()
+
+    return updated
+
+
 def _daemon_loop():
     """守护进程主循环。"""
     while True:
@@ -85,6 +163,9 @@ def _daemon_loop():
             count = batch_search_word_lyrics(db)
             if count:
                 logger.info("歌词守护进程：本轮更新 %d 首逐字歌词", count)
+            trans_count = batch_backfill_translations(db)
+            if trans_count:
+                logger.info("歌词守护进程：本轮补充 %d 首翻译", trans_count)
         except Exception:
             logger.exception("歌词守护进程异常")
         finally:

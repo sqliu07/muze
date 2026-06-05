@@ -3,6 +3,8 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import useLyricSync from "@/hooks/useLyricSync"
 import { getAudioCurrentTime } from "@/hooks/useAudio"
 import type { LyricsOut } from "@/types/api"
+import { useUIStore } from "@/store/uiStore"
+import TranslationToggle from "./TranslationToggle"
 import {
   LYRIC_ROW_HEIGHT,
   CURRENT_LINE_WEIGHT,
@@ -42,16 +44,29 @@ import {
 interface LyricsViewProps {
   lyrics: LyricsOut | null | undefined
   onSeek?: (time: number) => void
+  trackId?: number
+  onFeedback?: (message: string, timeoutMs?: number) => void
 }
 
-function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
+/** 粗略判断歌词是否为英文（英文字符占比 > 30%） */
+function isEnglishLyrics(content: string): boolean {
+  if (!content) return false
+  const sample = content.slice(0, 500)
+  const enMatches = sample.match(/[a-zA-Z]{3,}/g) || []
+  const enChars = enMatches.join('').length
+  const clean = sample.replace(/\[[\d:.]+\]/g, '')
+  return enChars / Math.max(1, clean.trim().length) > 0.3
+}
+
+function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
+  const showTranslation = useUIStore((s) => s.showTranslation)
   const {
     lines,
     currentIndex,
     interludeProgress,
     interludeAfterIndex,
     interludeHideBefore,
-  } = useLyricSync(lyrics)
+  } = useLyricSync(lyrics, showTranslation)
   const interludeActive = interludeProgress !== null && interludeAfterIndex !== null
   const activeFillRef = useRef<HTMLSpanElement | null>(null)
   const targetProgressRef = useRef(0)
@@ -354,8 +369,11 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
     )
   }
 
+  const hasTranslation = !!lyrics?.translated_content
+  const isEnglish = isEnglishLyrics(lyrics?.content ?? '')
+
   return (
-    <div className="flex h-full items-start overflow-hidden">
+    <div className="relative flex h-full items-start overflow-hidden">
       <div
         className="w-full"
         style={{
@@ -472,6 +490,9 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
                 )
               }
 
+              const hasTranslation = showTranslation && line.translation
+              const lineHeight = hasTranslation ? LYRIC_ROW_HEIGHT + 28 : LYRIC_ROW_HEIGHT
+
               elements.push(
                 <div
                   key={`line-${index}`}
@@ -479,7 +500,7 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
                 >
                   <motion.button
                     className="flex w-full items-center border-none bg-transparent text-left whitespace-nowrap"
-                    style={{ height: LYRIC_ROW_HEIGHT }}
+                    style={{ height: lineHeight }}
                     animate={{
                       opacity:
                         distance === 0
@@ -498,48 +519,25 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
                     }}
                     onClick={() => onSeek?.(line.time)}
                   >
-                    <span
-                      className="block max-w-full whitespace-nowrap pb-1"
-                      style={{
-                        fontWeight: distance === 0 ? CURRENT_LINE_WEIGHT : OTHER_LINE_WEIGHT,
-                        color: "white",
-                        fontFamily: LYRIC_FONT_FAMILY,
-                        fontSize: LYRIC_FONT_SIZE,
-                        lineHeight: LYRIC_LINE_HEIGHT,
-                      }}
-                    >
-                      {distance === 0 && line.words && line.words.length > 0 ? (
-                        <span className="relative inline-block whitespace-pre text-white/55">
-                          {line.words.map((word, wordIndex) => (
-                            <span
-                              key={`${index}-base-word-${wordIndex}`}
-                              ref={(el) => {
-                                if (el) {
-                                  wordBaseLiftRefs.current[wordIndex] = el
-                                }
-                              }}
-                              className="inline-block"
-                              style={{ willChange: "transform" }}
-                            >
-                              {word.text}
-                            </span>
-                          ))}
-                          <span
-                            ref={activeFillRef}
-                            className="absolute left-0 top-0 whitespace-pre text-white"
-                            style={{
-                              clipPath: "inset(0 100% 0 0)",
-                              WebkitClipPath: "inset(0 100% 0 0)",
-                              willChange: "clip-path",
-                              paddingBottom: "0.3em",
-                            }}
-                          >
+                    <div className="flex flex-col">
+                      <span
+                        className="block max-w-full whitespace-nowrap pb-1"
+                        style={{
+                          fontWeight: distance === 0 ? CURRENT_LINE_WEIGHT : OTHER_LINE_WEIGHT,
+                          color: "white",
+                          fontFamily: LYRIC_FONT_FAMILY,
+                          fontSize: LYRIC_FONT_SIZE,
+                          lineHeight: LYRIC_LINE_HEIGHT,
+                        }}
+                      >
+                        {distance === 0 && line.words && line.words.length > 0 ? (
+                          <span className="relative inline-block whitespace-pre text-white/55">
                             {line.words.map((word, wordIndex) => (
                               <span
-                                key={`${index}-word-${wordIndex}`}
+                                key={`${index}-base-word-${wordIndex}`}
                                 ref={(el) => {
                                   if (el) {
-                                    wordLiftRefs.current[wordIndex] = el
+                                    wordBaseLiftRefs.current[wordIndex] = el
                                   }
                                 }}
                                 className="inline-block"
@@ -548,12 +546,49 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
                                 {word.text}
                               </span>
                             ))}
+                            <span
+                              ref={activeFillRef}
+                              className="absolute left-0 top-0 whitespace-pre text-white"
+                              style={{
+                                clipPath: "inset(0 100% 0 0)",
+                                WebkitClipPath: "inset(0 100% 0 0)",
+                                willChange: "clip-path",
+                                paddingBottom: "0.3em",
+                              }}
+                            >
+                              {line.words.map((word, wordIndex) => (
+                                <span
+                                  key={`${index}-word-${wordIndex}`}
+                                  ref={(el) => {
+                                    if (el) {
+                                      wordLiftRefs.current[wordIndex] = el
+                                    }
+                                  }}
+                                  className="inline-block"
+                                  style={{ willChange: "transform" }}
+                                >
+                                  {word.text}
+                                </span>
+                              ))}
+                            </span>
                           </span>
+                        ) : (
+                          line.text
+                        )}
+                      </span>
+                      {hasTranslation && (
+                        <span
+                          className="block max-w-full text-white/40"
+                          style={{
+                            fontFamily: LYRIC_FONT_FAMILY,
+                            fontSize: '1.3rem',
+                            lineHeight: '1.4',
+                          }}
+                        >
+                          {line.translation}
                         </span>
-                      ) : (
-                        line.text
                       )}
-                    </span>
+                    </div>
                   </motion.button>
 
                 </div>
@@ -565,6 +600,12 @@ function LyricsView({ lyrics, onSeek }: LyricsViewProps) {
           </motion.div>
         </div>
       </div>
+      {/* 翻译切换按钮 — 右下角 */}
+      {trackId && (
+        <div className="absolute bottom-4 right-4 z-10">
+          <TranslationToggle isEnglish={isEnglish} hasTranslation={hasTranslation} trackId={trackId} onFeedback={onFeedback} />
+        </div>
+      )}
     </div>
   )
 }

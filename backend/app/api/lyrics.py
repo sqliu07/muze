@@ -1,9 +1,10 @@
 """歌词 API — 获取、搜索、保存歌词。"""
 from __future__ import annotations
 
+import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -15,10 +16,47 @@ from app.services.lyrics_service import (
     has_word_level_timestamps,
     search_lddc_candidates,
     search_online_lyrics,
+    translate_lyrics,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/lyrics", tags=["lyrics"])
 _WHITESPACE_RE = re.compile(r"\s+")
+_ENGLISH_RE = re.compile(r"[a-zA-Z]{3,}")  # 至少连续 3 个英文字母
+
+
+def _is_likely_english(text: str) -> bool:
+    """粗略判断歌词是否为英文（英文字符占比 > 30%）。"""
+    if not text:
+        return False
+    # 取前 500 字符采样
+    sample = text[:500]
+    en_chars = len(_ENGLISH_RE.findall(sample))
+    # 去掉时间戳后的纯文本长度
+    clean = re.sub(r"\[[\d:.]+\]", "", sample)
+    total = max(1, len(clean.strip()))
+    return en_chars / total > 0.3
+
+
+def _background_translate(track_id: int, content: str) -> None:
+    """后台翻译歌词并保存。"""
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        translated = translate_lyrics(content)
+        if not translated:
+            return
+        lyrics = db.query(Lyrics).filter_by(track_id=track_id).first()
+        if lyrics and not lyrics.translated_content:
+            lyrics.translated_content = translated
+            db.commit()
+            logger.info("后台翻译完成: track_id=%d", track_id)
+    except Exception:
+        logger.exception("后台翻译失败: track_id=%d", track_id)
+    finally:
+        db.close()
 
 
 def _save_lyrics(
@@ -34,6 +72,9 @@ def _save_lyrics(
         lyrics.content = result.content
         lyrics.source = result.source
         lyrics.synced = result.synced
+        # 有翻译时更新翻译字段，无翻译时保留已有翻译
+        if result.translated_content:
+            lyrics.translated_content = result.translated_content
         # 仅在不保留且来源为本地文件时才覆盖 original_* 字段
         if not preserve_original and result.source in ("embedded", "lrc"):
             lyrics.original_content = result.content
@@ -44,6 +85,7 @@ def _save_lyrics(
             content=result.content,
             source=result.source,
             synced=result.synced,
+            translated_content=result.translated_content,
         )
         if result.source in ("embedded", "lrc"):
             lyrics.original_content = result.content
@@ -82,6 +124,8 @@ def _save_search_cache(
         cache.content = result.content
         cache.source = result.source
         cache.synced = result.synced
+        if result.translated_content:
+            cache.translated_content = result.translated_content
     else:
         cache = LyricsSearchCache(
             query_title=query_title,
@@ -89,6 +133,7 @@ def _save_search_cache(
             content=result.content,
             source=result.source,
             synced=result.synced,
+            translated_content=result.translated_content,
         )
         db.add(cache)
     db.commit()
@@ -111,13 +156,16 @@ def lyrics_search_status(db: Session = Depends(get_db)):
 
 
 @router.get("/{track_id}", response_model=LyricsOut)
-def get_track_lyrics(track_id: int, db: Session = Depends(get_db)):
+def get_track_lyrics(track_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """获取歌词。有缓存则返回，无则自动获取并保存。"""
     track = _get_track_or_404(track_id, db)
 
     # 已有缓存
     lyrics = db.query(Lyrics).filter_by(track_id=track_id).first()
     if lyrics and lyrics.content:
+        # 英文歌词无翻译时，后台自动触发翻译
+        if not lyrics.translated_content and _is_likely_english(lyrics.content):
+            background_tasks.add_task(_background_translate, track_id, lyrics.content)
         return lyrics
 
     # 自动获取
@@ -155,6 +203,7 @@ def search_track_lyrics(
             content=cached.content,
             source=cached.source or "cache",
             synced=cached.synced,
+            translated_content=cached.translated_content,
         )
     else:
         result = search_online_lyrics(body.title, body.artist)
@@ -203,6 +252,7 @@ def search_track_lyrics_lddc_candidates(
             "word_level": has_word_level_timestamps(c.content),
             "preview": (c.content or "")[:240],
             "content": c.content,
+            "translated_content": c.translated_content,
             "song_title": c.song_title,
             "song_artist": c.song_artist,
         }
@@ -212,7 +262,7 @@ def search_track_lyrics_lddc_candidates(
 
 @router.put("/{track_id}", response_model=LyricsOut)
 def update_track_lyrics(
-    track_id: int, body: LyricsUpdate, db: Session = Depends(get_db)
+    track_id: int, body: LyricsUpdate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
 ):
     """手动保存歌词内容。"""
     _get_track_or_404(track_id, db)
@@ -232,16 +282,25 @@ def update_track_lyrics(
         lyrics.content = body.content
         lyrics.source = src
         lyrics.synced = is_synced
+        # 如果请求中包含翻译，直接保存
+        if body.translated_content:
+            lyrics.translated_content = body.translated_content
     else:
         lyrics = Lyrics(
             track_id=track_id,
             content=body.content,
             source=src,
             synced=is_synced,
+            translated_content=body.translated_content,
         )
         db.add(lyrics)
     db.commit()
     db.refresh(lyrics)
+
+    # 英文歌词无翻译时，后台自动触发翻译
+    if not lyrics.translated_content and _is_likely_english(lyrics.content):
+        background_tasks.add_task(_background_translate, track_id, lyrics.content)
+
     return lyrics
 
 
@@ -260,6 +319,26 @@ def restore_original_lyrics(track_id: int, db: Session = Depends(get_db)):
         lyrics.original_content
         and re.search(r"\[\d{1,2}:\d{2}", lyrics.original_content)
     )
+    db.commit()
+    db.refresh(lyrics)
+    return lyrics
+
+
+@router.post("/{track_id}/translate", response_model=LyricsOut)
+def translate_track_lyrics(track_id: int, force: bool = False, db: Session = Depends(get_db)):
+    """触发歌词翻译并返回结果（同步等待完成）。force=true 时强制重新翻译。"""
+    _get_track_or_404(track_id, db)
+    lyrics = db.query(Lyrics).filter_by(track_id=track_id).first()
+    if not lyrics or not lyrics.content:
+        raise HTTPException(status_code=404, detail="没有歌词可翻译")
+    if lyrics.translated_content and not force:
+        return lyrics
+
+    translated = translate_lyrics(lyrics.content)
+    if not translated:
+        raise HTTPException(status_code=500, detail="翻译失败")
+
+    lyrics.translated_content = translated
     db.commit()
     db.refresh(lyrics)
     return lyrics

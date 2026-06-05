@@ -175,6 +175,11 @@ export async function restoreLyrics(trackId: number): Promise<LyricsOut> {
   return data
 }
 
+export async function translateLyrics(trackId: number, force = false): Promise<LyricsOut> {
+  const { data } = await api.post<LyricsOut>(`/lyrics/${trackId}/translate`, null, { params: { force } })
+  return data
+}
+
 export interface LyricsStatus {
   total: number
   synced: number
@@ -287,5 +292,23 @@ export async function getArtistImageFetchStatus(): Promise<ArtistImageFetchStatu
 
 export async function fetchArtistImage(artistId: number): Promise<{ status: string; message: string }> {
   const { data } = await api.post(`/artists/${artistId}/fetch-image`)
+  return data
+}
+
+// --- Settings ---
+
+export interface AppSettings {
+  deepseek_api_key: string
+  translate_source: string
+  translate_target: string
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  const { data } = await api.get<AppSettings>('/settings')
+  return data
+}
+
+export async function updateSettings(payload: Partial<AppSettings>): Promise<AppSettings> {
+  const { data } = await api.put<AppSettings>('/settings', payload)
   return data
 }
