@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom"
-import { Music, Disc, Mic2, ListMusic, Heart, FolderOpen } from "lucide-react"
+import { Music, Disc, Mic2, ListMusic, Heart, FolderOpen, Settings } from "lucide-react"
 import { ThemeSwitcher } from "@/components/common/ThemeSwitcher"
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: "/playlists", icon: ListMusic, label: "播放列表" },
   { to: "/favorites", icon: Heart, label: "收藏" },
   { to: "/library", icon: FolderOpen, label: "媒体库" },
+  { to: "/settings", icon: Settings, label: "设置" },
 ]
 
 export function Sidebar() {

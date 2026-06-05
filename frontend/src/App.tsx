@@ -11,6 +11,7 @@ import PlaylistsPage from "@/pages/PlaylistsPage"
 import PlaylistDetailPage from "@/pages/PlaylistDetailPage"
 import FavoritesPage from "@/pages/FavoritesPage"
 import LibraryManagePage from "@/pages/LibraryManagePage"
+import SettingsPage from "@/pages/SettingsPage"
 import PrototypePage from "@/pages/PrototypePage"
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
             <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/library" element={<LibraryManagePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/prototype" element={<PrototypePage />} />
           </Route>
         </Routes>
