@@ -543,8 +543,8 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                 >
                   <motion.button
                     className="flex w-full items-center border-none bg-transparent text-left whitespace-nowrap"
-                    style={{ height: lineHeight }}
                     animate={{
+                      height: lineHeight,
                       opacity:
                         distance === 0
                           ? 1
@@ -557,8 +557,17 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                                 : LINE_OPACITY_D_FAR,
                     }}
                     transition={{
-                      duration: OPACITY_TRANSITION_DURATION,
-                      ease: "easeOut",
+                      height: {
+                        type: "spring",
+                        stiffness: SCROLL_SPRING_STIFFNESS,
+                        damping: SCROLL_SPRING_DAMPING,
+                        mass: SCROLL_SPRING_MASS,
+                        delay: translationFading ? 0.15 : 0,
+                      },
+                      opacity: {
+                        duration: OPACITY_TRANSITION_DURATION,
+                        ease: "easeOut",
+                      },
                     }}
                     onClick={() => onSeek?.(line.time)}
                   >
