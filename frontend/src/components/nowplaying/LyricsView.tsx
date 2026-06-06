@@ -69,7 +69,8 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
   } = useLyricSync(lyrics, showTranslation)
 
   // 翻译切换动画状态
-  const [translationFading, setTranslationFading] = useState(false)
+  // translationPhase: "idle" | "fading-out" | "height-changing" | "fading-in"
+  const [translationPhase, setTranslationPhase] = useState<"idle" | "fading-out" | "height-changing" | "fading-in">("idle")
   const [displayedTranslation, setDisplayedTranslation] = useState(showTranslation)
   const translationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interludeActive = interludeProgress !== null && interludeAfterIndex !== null
@@ -149,30 +150,36 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
 
   // 翻译切换动画
   useEffect(() => {
-    if (showTranslation === displayedTranslation) return
+    if (showTranslation === displayedTranslation && translationPhase === "idle") return
 
-    if (showTranslation) {
-      // 显示翻译：先更新状态，再淡入
+    if (showTranslation && !displayedTranslation) {
+      // 显示翻译：先更新高度，再淡入
+      setTranslationPhase("height-changing")
       setDisplayedTranslation(true)
-      setTranslationFading(true)
-      // 下一帧开始淡入
-      requestAnimationFrame(() => {
-        setTranslationFading(false)
-      })
-    } else {
-      // 隐藏翻译：先淡出，再更新状态
-      setTranslationFading(true)
       if (translationTimerRef.current !== null) clearTimeout(translationTimerRef.current)
       translationTimerRef.current = setTimeout(() => {
+        setTranslationPhase("fading-in")
+        translationTimerRef.current = setTimeout(() => {
+          setTranslationPhase("idle")
+        }, 150)
+      }, 300)
+    } else if (!showTranslation && displayedTranslation) {
+      // 隐藏翻译：先淡出，再更新高度
+      setTranslationPhase("fading-out")
+      if (translationTimerRef.current !== null) clearTimeout(translationTimerRef.current)
+      translationTimerRef.current = setTimeout(() => {
+        setTranslationPhase("height-changing")
         setDisplayedTranslation(false)
-        setTranslationFading(false)
+        translationTimerRef.current = setTimeout(() => {
+          setTranslationPhase("idle")
+        }, 300)
       }, 150)
     }
 
     return () => {
       if (translationTimerRef.current !== null) clearTimeout(translationTimerRef.current)
     }
-  }, [showTranslation, displayedTranslation])
+  }, [showTranslation, displayedTranslation, translationPhase])
 
   // ── 滚动目标 ──
   const targetDisplayPos = currentIndex + (hasDots && dotsAfterIndex !== null && currentIndex > dotsAfterIndex ? 1 : 0)
@@ -535,6 +542,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
 
               const hasTranslation = displayedTranslation && line.translation
               const lineHeight = hasTranslation ? LYRIC_ROW_HEIGHT + 28 : LYRIC_ROW_HEIGHT
+              const translationOpacity = translationPhase === "fading-out" ? 0 : translationPhase === "fading-in" ? 1 : (hasTranslation ? 1 : 0)
 
               elements.push(
                 <div
@@ -562,7 +570,6 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                         stiffness: SCROLL_SPRING_STIFFNESS,
                         damping: SCROLL_SPRING_DAMPING,
                         mass: SCROLL_SPRING_MASS,
-                        delay: translationFading ? 0.3 : 0,
                       },
                       opacity: {
                         duration: OPACITY_TRANSITION_DURATION,
@@ -635,7 +642,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                             fontFamily: LYRIC_FONT_FAMILY,
                             fontSize: '1.3rem',
                             lineHeight: '1.4',
-                            opacity: translationFading ? 0 : 1,
+                            opacity: translationOpacity,
                             transition: 'opacity 150ms ease-out',
                           }}
                         >
