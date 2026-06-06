@@ -562,7 +562,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                         stiffness: SCROLL_SPRING_STIFFNESS,
                         damping: SCROLL_SPRING_DAMPING,
                         mass: SCROLL_SPRING_MASS,
-                        delay: translationFading ? 0.15 : 0,
+                        delay: translationFading ? 0.3 : 0,
                       },
                       opacity: {
                         duration: OPACITY_TRANSITION_DURATION,
