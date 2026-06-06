@@ -67,6 +67,11 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
     interludeAfterIndex,
     interludeHideBefore,
   } = useLyricSync(lyrics, showTranslation)
+
+  // 翻译切换动画状态
+  const [translationFading, setTranslationFading] = useState(false)
+  const [displayedTranslation, setDisplayedTranslation] = useState(showTranslation)
+  const translationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interludeActive = interludeProgress !== null && interludeAfterIndex !== null
   const activeFillRef = useRef<HTMLSpanElement | null>(null)
   const targetProgressRef = useRef(0)
@@ -138,8 +143,36 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
     return () => {
       if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current)
       if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current)
+      if (translationTimerRef.current !== null) clearTimeout(translationTimerRef.current)
     }
   }, [])
+
+  // 翻译切换动画
+  useEffect(() => {
+    if (showTranslation === displayedTranslation) return
+
+    if (showTranslation) {
+      // 显示翻译：先更新状态，再淡入
+      setDisplayedTranslation(true)
+      setTranslationFading(true)
+      // 下一帧开始淡入
+      requestAnimationFrame(() => {
+        setTranslationFading(false)
+      })
+    } else {
+      // 隐藏翻译：先淡出，再更新状态
+      setTranslationFading(true)
+      if (translationTimerRef.current !== null) clearTimeout(translationTimerRef.current)
+      translationTimerRef.current = setTimeout(() => {
+        setDisplayedTranslation(false)
+        setTranslationFading(false)
+      }, 150)
+    }
+
+    return () => {
+      if (translationTimerRef.current !== null) clearTimeout(translationTimerRef.current)
+    }
+  }, [showTranslation, displayedTranslation])
 
   // ── 滚动目标 ──
   const targetDisplayPos = currentIndex + (hasDots && dotsAfterIndex !== null && currentIndex > dotsAfterIndex ? 1 : 0)
@@ -500,7 +533,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                 )
               }
 
-              const hasTranslation = showTranslation && line.translation
+              const hasTranslation = displayedTranslation && line.translation
               const lineHeight = hasTranslation ? LYRIC_ROW_HEIGHT + 28 : LYRIC_ROW_HEIGHT
 
               elements.push(
@@ -593,6 +626,8 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                             fontFamily: LYRIC_FONT_FAMILY,
                             fontSize: '1.3rem',
                             lineHeight: '1.4',
+                            opacity: translationFading ? 0 : 1,
+                            transition: 'opacity 150ms ease-out',
                           }}
                         >
                           {line.translation}

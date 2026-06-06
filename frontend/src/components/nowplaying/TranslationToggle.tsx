@@ -68,7 +68,7 @@ export default function TranslationToggle({ isEnglish, hasTranslation, trackId, 
           disabled={translateMutation.isPending}
           className="focus:bg-white/10 focus:text-white"
         >
-          重新翻译
+          {hasTranslation ? '重新翻译' : '翻译'}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
