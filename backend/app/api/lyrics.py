@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/lyrics", tags=["lyrics"])
 _WHITESPACE_RE = re.compile(r"\s+")
-_ENGLISH_RE = re.compile(r"[a-zA-Z]{3,}")  # 至少连续 3 个英文字母
+_ENGLISH_RE = re.compile(r"[a-zA-Z]+")  # 连续英文字母
 
 
 def _is_likely_english(text: str) -> bool:
@@ -32,7 +32,7 @@ def _is_likely_english(text: str) -> bool:
         return False
     # 取前 500 字符采样
     sample = text[:500]
-    en_chars = len(_ENGLISH_RE.findall(sample))
+    en_chars = sum(len(m) for m in _ENGLISH_RE.findall(sample))
     # 去掉时间戳后的纯文本长度
     clean = re.sub(r"\[[\d:.]+\]", "", sample)
     total = max(1, len(clean.strip()))

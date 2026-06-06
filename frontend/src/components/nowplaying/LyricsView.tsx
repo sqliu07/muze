@@ -52,7 +52,7 @@ interface LyricsViewProps {
 function isEnglishLyrics(content: string): boolean {
   if (!content) return false
   const sample = content.slice(0, 500)
-  const enMatches = sample.match(/[a-zA-Z]{3,}/g) || []
+  const enMatches = sample.match(/[a-zA-Z]+/g) || []
   const enChars = enMatches.join('').length
   const clean = sample.replace(/\[[\d:.]+\]/g, '')
   return enChars / Math.max(1, clean.trim().length) > 0.3
@@ -93,9 +93,11 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 间奏激活时记录 afterIndex，退出后继续保留以便定位点阵位置
-  if (interludeActive && interludeAfterIndex !== null) {
-    lastInterludeAfterIndexRef.current = interludeAfterIndex
-  }
+  useLayoutEffect(() => {
+    if (interludeActive && interludeAfterIndex !== null) {
+      lastInterludeAfterIndexRef.current = interludeAfterIndex
+    }
+  }, [interludeActive, interludeAfterIndex])
 
   const hasDots = phase === "interlude" || phase === "exiting"
   const dotsExiting = phase === "exiting"
@@ -130,6 +132,14 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
       }, exitDuration * 1000)
     }
   }, [interludeActive, phase, exitDuration])
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current)
+      if (scrollTimerRef.current !== null) clearTimeout(scrollTimerRef.current)
+    }
+  }, [])
 
   // ── 滚动目标 ──
   const targetDisplayPos = currentIndex + (hasDots && dotsAfterIndex !== null && currentIndex > dotsAfterIndex ? 1 : 0)

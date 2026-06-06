@@ -67,13 +67,18 @@ function SeekBar({ duration, className }: SeekBarProps) {
         setDragProgress(ratio(ev.clientX) * 100)
       }
       const onUp = (ev: PointerEvent) => {
-        seekAudio(ratio(ev.clientX) * durationRef.current)
+        // pointercancel 时 clientX 可能无效，仅在 pointerup 时执行 seek
+        if (ev.type === "pointerup") {
+          seekAudio(ratio(ev.clientX) * durationRef.current)
+        }
         setDragging(false)
         window.removeEventListener("pointermove", onMove)
         window.removeEventListener("pointerup", onUp)
+        window.removeEventListener("pointercancel", onUp)
       }
       window.addEventListener("pointermove", onMove)
       window.addEventListener("pointerup", onUp)
+      window.addEventListener("pointercancel", onUp)
     },
     []
   )

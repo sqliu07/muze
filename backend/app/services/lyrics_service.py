@@ -541,7 +541,7 @@ def search_netease(title: str, artist: Optional[str] = None) -> Optional[LyricsR
 # ── 歌词翻译 ──────────────────────────────────────────────────────────────────
 
 _GOOGLE_TRANSLATE_API = "https://translate.googleapis.com/translate_a/single"
-_TRANSLATE_SEP = " ||| "
+_TRANSLATE_SEP = ""
 
 
 def _parse_lrc_lines(content: str) -> list[tuple[str, str]]:
@@ -669,7 +669,7 @@ def _translate_google(texts: list[str], src: str = "en", tgt: str = "zh-CN") -> 
 
         result = resp.json()
         translated_text = "".join(seg[0] for seg in result[0] if seg and seg[0])
-        translated = [t.strip() for t in translated_text.split("|||")]
+        translated = [t.strip() for t in translated_text.split(_TRANSLATE_SEP)]
         translated = [t for t in translated if t]
 
         if len(translated) != len(texts):

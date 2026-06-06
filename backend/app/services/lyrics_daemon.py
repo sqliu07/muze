@@ -158,18 +158,24 @@ def _daemon_loop():
     """守护进程主循环。"""
     while True:
         time.sleep(_SEARCH_INTERVAL)
-        db = SessionLocal()
         try:
-            count = batch_search_word_lyrics(db)
-            if count:
-                logger.info("歌词守护进程：本轮更新 %d 首逐字歌词", count)
-            trans_count = batch_backfill_translations(db)
-            if trans_count:
-                logger.info("歌词守护进程：本轮补充 %d 首翻译", trans_count)
+            db = SessionLocal()
+            try:
+                count = batch_search_word_lyrics(db)
+                if count:
+                    logger.info("歌词守护进程：本轮更新 %d 首逐字歌词", count)
+            finally:
+                db.close()
+
+            db = SessionLocal()
+            try:
+                trans_count = batch_backfill_translations(db)
+                if trans_count:
+                    logger.info("歌词守护进程：本轮补充 %d 首翻译", trans_count)
+            finally:
+                db.close()
         except Exception:
             logger.exception("歌词守护进程异常")
-        finally:
-            db.close()
 
 
 def start_lyrics_daemon() -> threading.Thread | None:
