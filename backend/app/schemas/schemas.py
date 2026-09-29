@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Artist ──────────────────────────────────────────────────────────────────
@@ -14,11 +14,10 @@ class ArtistBase(BaseModel):
 
 
 class ArtistOut(ArtistBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     cover_path: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 # ── Album ───────────────────────────────────────────────────────────────────
@@ -31,25 +30,21 @@ class AlbumBase(BaseModel):
 
 
 class AlbumOut(AlbumBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     artist_id: Optional[int] = None
     artist: Optional[ArtistOut] = None
     cover_path: Optional[str] = None
     total_tracks: int = 0
 
-    class Config:
-        from_attributes = True
-
-
 class AlbumSummaryOut(AlbumBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     artist_id: Optional[int] = None
     cover_path: Optional[str] = None
     total_tracks: int = 0
-
-    class Config:
-        from_attributes = True
-
 
 # ── Track ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +60,8 @@ class TrackBase(BaseModel):
 
 
 class TrackOut(TrackBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     file_path: str
     artist_id: Optional[int] = None
@@ -78,10 +75,6 @@ class TrackOut(TrackBase):
     date_added: datetime
     is_favorite: bool = False
 
-    class Config:
-        from_attributes = True
-
-
 class TrackUpdate(BaseModel):
     title: Optional[str] = None
     artist_name: Optional[str] = None
@@ -92,6 +85,26 @@ class TrackUpdate(BaseModel):
     genre: Optional[str] = None
 
 
+class TrackCoverSearch(BaseModel):
+    title: str
+    artist: Optional[str] = None
+    limit: int = 8
+
+
+class TrackCoverCandidateOut(BaseModel):
+    image_url: str
+    thumbnail_url: str
+    album_title: str = ""
+    artist_name: str = ""
+    source: str = "itunes"
+
+
+class TrackCoverApply(BaseModel):
+    image_url: str
+    album_title: Optional[str] = None
+    artist_name: Optional[str] = None
+
+
 class TrackListOut(BaseModel):
     items: list[TrackOut]
     total: int
@@ -100,30 +113,29 @@ class TrackListOut(BaseModel):
 
 
 class AlbumDetailOut(AlbumOut):
-    tracks: list[TrackOut] = []
+    tracks: list[TrackOut] = Field(default_factory=list)
 
 
 class ArtistDetailOut(ArtistOut):
-    albums: list[AlbumOut] = []
+    albums: list[AlbumOut] = Field(default_factory=list)
 
 
 # ── Lyrics ──────────────────────────────────────────────────────────────────
 
 
 class LyricsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     track_id: int
     source: Optional[str] = None
     content: Optional[str] = None
     synced: bool = False
+    offset_ms: int = 0
     translated_content: Optional[str] = None
     original_content: Optional[str] = None
     original_source: Optional[str] = None
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
 
 class LyricsSearch(BaseModel):
     title: str
@@ -146,6 +158,7 @@ class LyricsCandidateOut(BaseModel):
     translated_content: Optional[str] = None
     song_title: str = ""
     song_artist: str = ""
+    duration_seconds: Optional[float] = None
 
 
 # ── Playlist ────────────────────────────────────────────────────────────────
@@ -162,6 +175,8 @@ class PlaylistUpdate(BaseModel):
 
 
 class PlaylistOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     description: Optional[str] = None
@@ -169,12 +184,8 @@ class PlaylistOut(BaseModel):
     updated_at: datetime
     track_count: int = 0
 
-    class Config:
-        from_attributes = True
-
-
 class PlaylistDetailOut(PlaylistOut):
-    tracks: list[TrackOut] = []
+    tracks: list[TrackOut] = Field(default_factory=list)
 
 
 class PlaylistTracksAdd(BaseModel):
@@ -193,14 +204,12 @@ class FolderAdd(BaseModel):
 
 
 class WatchFolderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     path: str
     last_scanned: Optional[datetime] = None
     active: bool = True
-
-    class Config:
-        from_attributes = True
-
 
 class ScanRequest(BaseModel):
     path: str
@@ -214,7 +223,7 @@ class BrowseEntry(BaseModel):
 class BrowseResult(BaseModel):
     path: str
     parent: Optional[str] = None
-    entries: list[BrowseEntry] = []
+    entries: list[BrowseEntry] = Field(default_factory=list)
 
 
 class BatchFolderAdd(BaseModel):
@@ -231,18 +240,16 @@ class ScanResult(BaseModel):
 
 
 class FavoriteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     track_id: int
     added_at: datetime
     track: TrackOut
-
-    class Config:
-        from_attributes = True
-
 
 # ── Search ───────────────────────────────────────────────────────────────────
 
 
 class SearchResultOut(BaseModel):
-    artists: list[ArtistOut] = []
-    albums: list[AlbumOut] = []
-    tracks: list[TrackOut] = []
+    artists: list[ArtistOut] = Field(default_factory=list)
+    albums: list[AlbumOut] = Field(default_factory=list)
+    tracks: list[TrackOut] = Field(default_factory=list)

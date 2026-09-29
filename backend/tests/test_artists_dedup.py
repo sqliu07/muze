@@ -2,7 +2,9 @@ from app.api import artists as artists_api
 from app.models.models import Album, Artist
 
 
-def test_artist_aliases_are_deduped_in_list_and_detail(db_session):
+def test_artist_aliases_are_deduped_in_list_and_detail(db_session, monkeypatch):
+    monkeypatch.setattr(artists_api, "_get_artist_image_path", lambda _name: None)
+
     a1 = Artist(name="Eason Chan陈奕迅", cover_path=None)
     a2 = Artist(name="陈奕迅", cover_path=None)
     db_session.add_all([a1, a2])

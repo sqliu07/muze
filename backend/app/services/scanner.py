@@ -207,6 +207,106 @@ def _write_artist_tag(audio, suffix: str, artist_name: str) -> bool:
     return False
 
 
+def _fetch_lyrics_during_scan_enabled() -> bool:
+    return (
+        os.getenv("MUZE_FETCH_LYRICS_DURING_SCAN", "0").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+
+
+def _fetch_covers_during_scan_enabled() -> bool:
+    return (
+        os.getenv("MUZE_FETCH_COVERS_DURING_SCAN", "0").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+
+
+def _searched_cover_name(
+    album_title: str,
+    artist_name: str | None,
+) -> str:
+    key = "\0".join([artist_name or "", album_title])
+    name_hash = hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+    return f"search-{name_hash}.jpg"
+
+
+def _maybe_fetch_cover_for_album(
+    album: Album | None,
+    album_artist: Artist | None,
+    track_artist: Artist | None,
+    title: str,
+    covers_dir: Path,
+) -> str | None:
+    if album is None:
+        return None
+    if album.cover_path:
+        return album.cover_path
+    if not _fetch_covers_during_scan_enabled():
+        return None
+
+    artist_name = (
+        album_artist.name
+        if album_artist and album_artist.name
+        else track_artist.name
+        if track_artist and track_artist.name
+        else None
+    )
+    cover_name = _searched_cover_name(album.title, artist_name)
+    cover_path = covers_dir / cover_name
+    if cover_path.exists():
+        return cover_name
+
+    try:
+        from app.services.cover_service import fetch_album_cover
+
+        image_data = fetch_album_cover(album.title, artist_name, title)
+        if not image_data:
+            return None
+
+        cover_path.write_bytes(image_data)
+        return cover_name
+    except Exception:
+        logger.exception("搜索封面失败: %s - %s", artist_name, album.title)
+        return None
+
+
+def _maybe_fetch_lyrics_for_track(
+    db: Session,
+    track: Track,
+    path: Path,
+    title: str,
+    artist: Artist | None,
+) -> None:
+    if not _fetch_lyrics_during_scan_enabled():
+        return
+
+    try:
+        from app.models.models import Lyrics
+        from app.services.lyrics_service import get_lyrics
+
+        existing_lyrics = db.query(Lyrics).filter_by(track_id=track.id).first()
+        if existing_lyrics:
+            return
+
+        artist_name = artist.name if artist else None
+        lyrics_result = get_lyrics(str(path), title, artist_name, track.duration)
+        if not lyrics_result:
+            return
+
+        new_lyrics = Lyrics(
+            track_id=track.id,
+            content=lyrics_result.content,
+            source=lyrics_result.source,
+            synced=lyrics_result.synced,
+        )
+        if lyrics_result.source in ("embedded", "lrc"):
+            new_lyrics.original_content = lyrics_result.content
+            new_lyrics.original_source = lyrics_result.source
+        db.add(new_lyrics)
+    except Exception:
+        logger.exception("获取歌词失败: %s", path)
+
+
 def _get_or_create_artist(db: Session, name: Optional[str]) -> Optional[Artist]:
     if not name:
         return None
@@ -452,6 +552,21 @@ def scan_file(
     ):
         _write_artist_tag(audio, suffix, artist.name)
 
+    if album and not cover_name:
+        cover_name = _maybe_fetch_cover_for_album(
+            album,
+            album_artist,
+            artist,
+            title_text,
+            covers_path,
+        )
+        if cover_name:
+            album.cover_path = cover_name
+            if album_artist and not album_artist.cover_path:
+                album_artist.cover_path = cover_name
+            if artist and not artist.cover_path:
+                artist.cover_path = cover_name
+
     if existing:
         existing.title = title_text
         existing.artist_id = artist.id if artist else None
@@ -466,28 +581,7 @@ def scan_file(
         existing.has_cover = cover_name is not None
         existing.file_missing = False
         db.flush()
-        # Auto-fetch lyrics for new/updated tracks
-        try:
-            from app.services.lyrics_service import get_lyrics
-            from app.models.models import Lyrics
-
-            existing_lyrics = db.query(Lyrics).filter_by(track_id=existing.id).first()
-            if not existing_lyrics:
-                artist_name = artist.name if artist else None
-                lyrics_result = get_lyrics(str(path), title_text, artist_name)
-                if lyrics_result:
-                    new_lyrics = Lyrics(
-                        track_id=existing.id,
-                        content=lyrics_result.content,
-                        source=lyrics_result.source,
-                        synced=lyrics_result.synced,
-                    )
-                    if lyrics_result.source in ("embedded", "lrc"):
-                        new_lyrics.original_content = lyrics_result.content
-                        new_lyrics.original_source = lyrics_result.source
-                    db.add(new_lyrics)
-        except Exception:
-            logger.exception("获取歌词失败: %s", path)
+        _maybe_fetch_lyrics_for_track(db, existing, path, title_text, artist)
         return existing
 
     # 创建 Track
@@ -507,28 +601,7 @@ def scan_file(
     )
     db.add(track)
     db.flush()
-    # Auto-fetch lyrics for new/updated tracks
-    try:
-        from app.services.lyrics_service import get_lyrics
-        from app.models.models import Lyrics
-
-        existing_lyrics = db.query(Lyrics).filter_by(track_id=track.id).first()
-        if not existing_lyrics:
-            artist_name = artist.name if artist else None
-            lyrics_result = get_lyrics(str(path), title_text, artist_name)
-            if lyrics_result:
-                new_lyrics = Lyrics(
-                    track_id=track.id,
-                    content=lyrics_result.content,
-                    source=lyrics_result.source,
-                    synced=lyrics_result.synced,
-                )
-                if lyrics_result.source in ("embedded", "lrc"):
-                    new_lyrics.original_content = lyrics_result.content
-                    new_lyrics.original_source = lyrics_result.source
-                db.add(new_lyrics)
-    except Exception:
-        logger.exception("获取歌词失败: %s", path)
+    _maybe_fetch_lyrics_for_track(db, track, path, title_text, artist)
     return track
 
 

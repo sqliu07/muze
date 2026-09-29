@@ -15,6 +15,7 @@ def create_minimal_mp3(path: Path) -> Path:
 def seed_track(client, tmp_dir: Path) -> dict:
     """扫描一个 MP3 并返回第一个 track 数据。"""
     create_minimal_mp3(tmp_dir / "song.mp3")
+    client.post("/api/library/folders", json={"path": str(tmp_dir)})
     client.post("/api/library/scan", json={"path": str(tmp_dir)})
     resp = client.get("/api/tracks")
     return resp.json()["items"][0]

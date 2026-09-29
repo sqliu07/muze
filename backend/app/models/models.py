@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+
+def utc_now() -> datetime:
+    """Return an explicit UTC timestamp without relying on deprecated utcnow()."""
+    return datetime.now(timezone.utc)
 
 
 class Artist(Base):
@@ -60,9 +65,9 @@ class Track(Base):
     has_cover: Mapped[bool] = mapped_column(default=False)
     play_count: Mapped[int] = mapped_column(default=0)
     file_missing: Mapped[bool] = mapped_column(default=False)
-    date_added: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    date_added: Mapped[datetime] = mapped_column(default=utc_now)
     date_modified: Mapped[Optional[datetime]] = mapped_column(
-        default=None, onupdate=datetime.utcnow
+        default=None, onupdate=utc_now
     )
 
     artist: Mapped[Optional[Artist]] = relationship(back_populates="tracks")
@@ -88,11 +93,12 @@ class Lyrics(Base):
     source: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     synced: Mapped[bool] = mapped_column(default=False)
+    offset_ms: Mapped[int] = mapped_column(default=0, server_default="0")
     translated_content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     original_content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     original_source: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=utc_now, onupdate=utc_now
     )
 
     track: Mapped[Track] = relationship(back_populates="lyrics")
@@ -110,7 +116,7 @@ class LyricsSearchCache(Base):
     synced: Mapped[bool] = mapped_column(default=False)
     translated_content: Mapped[Optional[str]] = mapped_column(Text, default=None)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=utc_now, onupdate=utc_now
     )
 
 
@@ -120,9 +126,9 @@ class Playlist(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow, onupdate=datetime.utcnow
+        default=utc_now, onupdate=utc_now
     )
 
     tracks: Mapped[list[PlaylistTrack]] = relationship(
@@ -151,7 +157,7 @@ class Favorite(Base):
     track_id: Mapped[int] = mapped_column(
         ForeignKey("tracks.id"), primary_key=True
     )
-    added_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    added_at: Mapped[datetime] = mapped_column(default=utc_now)
 
     track: Mapped[Track] = relationship(back_populates="favorite")
 

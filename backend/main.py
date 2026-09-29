@@ -18,7 +18,7 @@ from app.models import models  # noqa: F401 — 注册所有模型
 setup_logging()
 logger = logging.getLogger(__name__)
 
-from app.api.library import router as library_router
+from app.api.library import is_safe_watch_path, router as library_router
 from app.api.tracks import router as tracks_router
 from app.api.albums import router as albums_router
 from app.api.artists import router as artists_router
@@ -43,6 +43,7 @@ def _migrate_schema() -> None:
         ("lyrics", "original_content", "TEXT"),
         ("lyrics", "original_source", "VARCHAR(20)"),
         ("lyrics", "translated_content", "TEXT"),
+        ("lyrics", "offset_ms", "INTEGER NOT NULL DEFAULT 0"),
         ("lyrics_search_cache", "translated_content", "TEXT"),
     ]
 
@@ -51,9 +52,12 @@ def _migrate_schema() -> None:
             try:
                 conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
                 logger.info("迁移: 已添加 %s.%s (%s)", table, column, col_type)
-            except Exception:
-                # 列已存在则忽略
-                pass
+            except sa.exc.OperationalError as exc:
+                message = str(exc).lower()
+                if "duplicate column name" in message:
+                    continue
+                logger.warning("迁移失败: %s.%s (%s): %s", table, column, col_type, exc)
+                raise
 
 
 _migrate_schema()
@@ -68,7 +72,9 @@ async def lifespan(_app: FastAPI):
     db = SessionLocal()
     try:
         folders = db.query(WatchFolder).filter_by(active=True).all()
-        paths = [f.path for f in folders]
+        paths = [f.path for f in folders if is_safe_watch_path(f.path)]
+        if len(paths) != len(folders):
+            logger.warning("跳过不安全的媒体库监听目录；应用、数据和日志目录不能作为监听根目录")
     finally:
         db.close()
 

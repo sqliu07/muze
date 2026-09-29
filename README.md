@@ -35,7 +35,7 @@ Muze 是一个自托管本地音乐播放器，采用 **FastAPI + React + TypeSc
 | 层 | 技术 |
 |---|------|
 | 后端 | FastAPI、SQLAlchemy、Mutagen |
-| 前端 | React 18、Vite、TypeScript、TanStack Query、Zustand |
+| 前端 | React 19、Vite、TypeScript、TanStack Query、Zustand |
 | 动效 | Framer Motion、Canvas API、Web Audio API |
 | 数据库 | SQLite |
 | 歌词引擎 | LDDC（子模块）、lrclib、网易云 API |
@@ -133,8 +133,12 @@ docker run -p 8000:8000 \
 | `DATA_DIR` | `/app/data` | 数据目录 |
 | `LOGS_DIR` | `/app/logs` | 日志目录 |
 | `LDDC_REPO_PATH` | `/app/3rdparty/LDDC` | LDDC 路径 |
+| `MUZE_FETCH_LYRICS_DURING_SCAN` | `0` | 是否在扫描曲库时立即抓取歌词；默认按需获取 |
+| `MUZE_FETCH_COVERS_DURING_SCAN` | `0` | 是否在扫描曲库时自动联网搜索缺失的专辑封面；默认只使用本地内嵌封面 |
 
 ## 歌词来源策略
+
+播放页或歌词 API 首次请求时会按以下优先级获取歌词。若需要在曲库扫描阶段预取歌词，可设置 `MUZE_FETCH_LYRICS_DURING_SCAN=1`。
 
 1. 音频内嵌歌词（ID3 / Vorbis Comment）
 2. 同目录同名 `.lrc` 文件

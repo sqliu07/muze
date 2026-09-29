@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.config import COVERS_DIR, LOGS_DIR
+from app.core.config import BASE_DIR, COVERS_DIR, DATA_DIR, LOGS_DIR
 from app.core.database import get_db
 from app.models.models import (
     Album,
@@ -32,6 +33,30 @@ from app.services.scanner import normalize_artist_entities, scan_directory
 router = APIRouter(prefix="/api/library", tags=["library"])
 
 MUSIC_DIR = os.environ.get("MUSIC_DIR", "/music")
+
+
+def is_safe_watch_path(path: str) -> bool:
+    """Reject internal roots, their descendants, and roots containing them.
+
+    Resolve symlinks and compare path components so /music and /classical are
+    independent of /app, and similarly named siblings remain usable.
+    """
+    try:
+        target = Path(path).resolve()
+        for internal in (BASE_DIR, DATA_DIR, LOGS_DIR):
+            root = Path(internal).resolve()
+            if target.is_relative_to(root) or root.is_relative_to(target):
+                return False
+        return True
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _validate_watch_path(path: str) -> None:
+    if not is_safe_watch_path(path):
+        raise HTTPException(status_code=400, detail="不能将应用、数据或日志目录及其父目录用于媒体库")
+    if not os.path.isdir(path):
+        raise HTTPException(status_code=400, detail="目录不存在")
 
 
 @router.get("/browse", response_model=BrowseResult)
@@ -61,8 +86,7 @@ def browse_directories(path: str | None = None):
 @router.post("/folders", response_model=WatchFolderOut)
 def add_watch_folder(body: FolderAdd, db: Session = Depends(get_db)):
     """添加监听目录（验证目录存在，幂等）。"""
-    if not os.path.isdir(body.path):
-        raise HTTPException(status_code=400, detail="目录不存在")
+    _validate_watch_path(body.path)
 
     folder = db.query(WatchFolder).filter_by(path=body.path).first()
     if folder:
@@ -84,7 +108,7 @@ def add_watch_folders_batch(body: BatchFolderAdd, db: Session = Depends(get_db))
     """批量添加监听目录。"""
     results = []
     for path in body.paths:
-        if not os.path.isdir(path):
+        if not is_safe_watch_path(path) or not os.path.isdir(path):
             continue
         folder = db.query(WatchFolder).filter_by(path=path).first()
         if folder:
@@ -153,14 +177,15 @@ def remove_watch_folder(folder_id: int, db: Session = Depends(get_db)):
 @router.post("/scan", response_model=ScanResult)
 def scan_folder(body: ScanRequest, db: Session = Depends(get_db)):
     """扫描单个目录。"""
-    if not os.path.isdir(body.path):
-        raise HTTPException(status_code=400, detail="目录不存在")
+    _validate_watch_path(body.path)
 
     # 路径白名单校验：扫描路径必须与某个 active WatchFolder 存在前缀关系
     scan_path = os.path.realpath(body.path)
     active_folders = db.query(WatchFolder).filter_by(active=True).all()
     matched_folder = None
     for folder in active_folders:
+        if not is_safe_watch_path(folder.path):
+            continue
         folder_path = os.path.realpath(folder.path)
         # 双向前缀匹配：精确匹配、子目录扫描、父目录扫描
         if scan_path == folder_path or scan_path.startswith(folder_path + os.sep) or folder_path.startswith(scan_path + os.sep):
@@ -173,7 +198,7 @@ def scan_folder(body: ScanRequest, db: Session = Depends(get_db)):
     result = scan_directory(body.path, db, covers_dir)
 
     # 更新 last_scanned
-    matched_folder.last_scanned = datetime.utcnow()
+    matched_folder.last_scanned = datetime.now(timezone.utc)
     db.commit()
 
     return result
@@ -189,11 +214,14 @@ def refresh_all(db: Session = Depends(get_db)):
     covers_dir = str(COVERS_DIR)
 
     for folder in folders:
+        if not is_safe_watch_path(folder.path):
+            total_errors += 1
+            continue
         result = scan_directory(folder.path, db, covers_dir)
         total_added += result["added"]
         total_updated += result["updated"]
         total_errors += result["errors"]
-        folder.last_scanned = datetime.utcnow()
+        folder.last_scanned = datetime.now(timezone.utc)
 
     db.commit()
     return {"added": total_added, "updated": total_updated, "errors": total_errors}

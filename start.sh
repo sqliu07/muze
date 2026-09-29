@@ -11,7 +11,18 @@ fi
 
 echo "启动后端..."
 cd "$DIR/backend"
-source venv/bin/activate
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+elif [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+else
+    echo "缺少后端虚拟环境，请先执行:"
+    echo "  cd backend"
+    echo "  python3 -m venv .venv"
+    echo "  source .venv/bin/activate"
+    echo "  pip install -r requirements.txt"
+    exit 1
+fi
 uvicorn main:app --reload &
 BACKEND_PID=$!
 
