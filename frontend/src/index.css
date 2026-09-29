@@ -2,34 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 渐变色块背景 — 可动画的自定义属性 */
-@property --gc1 {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: rgb(45, 45, 45);
-}
-@property --gc2 {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: rgb(30, 30, 30);
-}
-@property --gc3 {
-  syntax: "<color>";
-  inherits: false;
-  initial-value: rgb(60, 60, 60);
-}
-
-.nowplaying-color-bg {
-  transition: --gc1 1.8s ease-in-out, --gc2 1.8s ease-in-out, --gc3 1.8s ease-in-out;
-  background: radial-gradient(ellipse at 20% 50%, var(--gc1), transparent 60%),
-              radial-gradient(ellipse at 80% 20%, var(--gc2), transparent 55%),
-              radial-gradient(ellipse at 50% 90%, var(--gc3), transparent 50%),
-              linear-gradient(135deg, var(--gc1), var(--gc2));
-}
-
-/* 色块漂移由 JS requestAnimationFrame 驱动，此处仅保留 @property 定义 */
-
-
 @layer base {
   /* ===== Light (default) ===== */
   :root,
@@ -192,37 +164,36 @@
   }
 }
 
+@keyframes nowplaying-palette-drift {
+  0% {
+    background-position: 0% 10%;
+    filter: saturate(var(--np-palette-sat-low, 0.96)) brightness(var(--np-palette-bright-low, 0.96));
+  }
+  34% {
+    background-position: 100% 28%;
+    filter: saturate(var(--np-palette-sat-high, 1.12)) brightness(var(--np-palette-bright-high, 1.04));
+  }
+  68% {
+    background-position: 18% 100%;
+    filter: saturate(calc((var(--np-palette-sat-low, 0.96) + var(--np-palette-sat-high, 1.12)) / 2)) brightness(0.98);
+  }
+  100% {
+    background-position: 88% 4%;
+    filter: saturate(calc(var(--np-palette-sat-high, 1.12) - 0.04)) brightness(1.02);
+  }
+}
+
+.nowplaying-palette-drift {
+  animation: nowplaying-palette-drift 14s ease-in-out infinite alternate;
+}
+
 .nowplaying-interlude-breathe {
   animation: nowplaying-interlude-breathe 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-@keyframes nowplaying-orb-a {
-  0% { transform: translate3d(0, 15%, 0) rotate(0deg); }
-  50% { transform: translate3d(8%, -15%, 0) rotate(20deg); }
-  100% { transform: translate3d(0, 15%, 0) rotate(40deg); }
-}
-
-@keyframes nowplaying-orb-b {
-  0% { transform: translate3d(0, 12%, 0) rotate(0deg); }
-  50% { transform: translate3d(-6%, -10%, 0) rotate(-18deg); }
-  100% { transform: translate3d(0, 12%, 0) rotate(-36deg); }
-}
-
-@keyframes nowplaying-orb-c {
-  0% { transform: translate3d(0, 18%, 0) rotate(0deg); }
-  50% { transform: translate3d(5%, -12%, 0) rotate(15deg); }
-  100% { transform: translate3d(0, 18%, 0) rotate(30deg); }
-}
-
-.nowplaying-orb-a { animation: nowplaying-orb-a 22s ease-in-out infinite; }
-.nowplaying-orb-b { animation: nowplaying-orb-b 28s ease-in-out infinite; }
-.nowplaying-orb-c { animation: nowplaying-orb-c 25s ease-in-out infinite; }
-
 @media (prefers-reduced-motion: reduce) {
   .nowplaying-interlude-breathe,
-  .nowplaying-orb-a,
-  .nowplaying-orb-b,
-  .nowplaying-orb-c {
+  .nowplaying-palette-drift {
     animation: none !important;
   }
 }

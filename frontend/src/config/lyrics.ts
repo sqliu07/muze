@@ -47,31 +47,29 @@ export const OPACITY_TRANSITION_DURATION = 0.35
 
 // ── 前奏点阵 ──
 export const PRELUDE_MIN_DURATION = 3.5
-export const PRELUDE_HIDE_BEFORE = 0.08
+export const PRELUDE_EXIT_WINDOW = 1.55
 export const PRELUDE_FILL_WINDOW_MAX = 6.5
 export const PRELUDE_FILL_WINDOW_MIN = 2.2
 export const PRELUDE_FILL_WINDOW_RATIO = 0.65
 export const PRELUDE_FILL_END_PAD = 0.9
 
 // ── 点阵呼吸动画 ──
-export const INTERLUDE_DOT_SCALE_MAX = 1.15
+export const INTERLUDE_DOT_SCALE_MAX = 1.22
 export const INTERLUDE_DOT_SCALE_MIN = 0.9
-export const INTERLUDE_DOT_BREATHE_DURATION = 5.0
-export const INTERLUDE_DOT_EXIT_PEAK = 1.12
+export const INTERLUDE_DOT_BREATHE_DURATION = 4.4
 
 // ── 句间间奏 ──
 export const INTERLUDE_GAP_MIN = 6
 export const INTERLUDE_LEAD_IN = 1.2
 export const INTERLUDE_FILL_BEFORE_NEXT = 1.0
 // 间奏提前结束时间：根据间隔动态计算，以下为取值范围
-export const INTERLUDE_HIDE_BEFORE_MIN = 0.7
-export const INTERLUDE_HIDE_BEFORE_MAX = 1.3
-export const INTERLUDE_HIDE_BEFORE_RATIO = 0.13 // hideBefore = clamp(gap * ratio, min, max)
-// 退出动画时长：取 hideBefore 的此比例，余量为收缩完到上浮的停顿
-export const INTERLUDE_EXIT_RATIO = 0.6
-export const INTERLUDE_DOT_EXIT_DURATION = 0.55
-export const INTERLUDE_EXIT_DURATION_MIN = 0.55
-export const INTERLUDE_EXIT_DURATION_MAX = 0.95
+export const INTERLUDE_HIDE_BEFORE_MIN = 1.45
+export const INTERLUDE_HIDE_BEFORE_MAX = 2.0
+export const INTERLUDE_HIDE_BEFORE_RATIO = 0.18 // hideBefore = clamp(gap * ratio, min, max)
+// 退出阶段占用大部分预留时间，剩余时间只用于点阵消失后的行高收起。
+export const INTERLUDE_EXIT_RATIO = 0.72
+export const INTERLUDE_EXIT_DURATION_MIN = 1.05
+export const INTERLUDE_EXIT_DURATION_MAX = 1.45
 export const INTERLUDE_LAST_WORD_PAD = 0.3
 export const INTERLUDE_NO_WORDS_FALLBACK = 3.0
 

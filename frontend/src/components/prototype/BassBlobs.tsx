@@ -26,7 +26,7 @@ export default function BassBlobs({ colors, intensity = 1, speed = 1 }: BassBlob
 
   // RAF 驱动时间计数器，触发位置更新
   useEffect(() => {
-    let start = performance.now()
+    const start = performance.now()
     const tick = (now: number) => {
       setT((now - start) / 1000)
       rafRef.current = requestAnimationFrame(tick)

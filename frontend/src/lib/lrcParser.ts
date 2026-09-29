@@ -7,6 +7,7 @@ export interface LyricLine {
 
 export interface LyricWord {
   start: number
+  end?: number
   text: string
 }
 
@@ -41,11 +42,14 @@ export function parseLrc(content: string): LyricLine[] {
       for (let i = 0; i < allMatches.length; i += 1) {
         const tag = allMatches[i]
         const start = parseTagTime(tag as RegExpExecArray)
+        const end = i + 1 < allMatches.length
+          ? parseTagTime(allMatches[i + 1] as RegExpExecArray)
+          : undefined
         const segStart = tag.index! + tag[0].length
         const segEnd = i + 1 < allMatches.length ? allMatches[i + 1].index! : raw.length
         const seg = raw.slice(segStart, segEnd)
         if (!seg) continue
-        words.push({ start, text: seg })
+        words.push({ start, end, text: seg })
       }
       if (words.length > 0) {
         lines.push({
@@ -97,6 +101,14 @@ export function matchTranslations(
     }
     return bestMatch ? { ...line, translation: bestMatch } : line
   })
+}
+
+export function isMostlyCjkLyrics(content: string): boolean {
+  const text = content.replace(/\[[^\]]+\]|<[^>]+>/g, "")
+  const chars = Array.from(text).filter((ch) => !/\s/.test(ch))
+  if (chars.length === 0) return false
+  const cjk = chars.filter((ch) => /[\u4e00-\u9fff]/.test(ch)).length
+  return cjk / chars.length >= 0.3
 }
 
 /**

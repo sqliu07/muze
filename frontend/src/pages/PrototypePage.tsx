@@ -10,7 +10,7 @@ const FALLBACK_COVER = "/test-cover.jpg"
 
 export default function PrototypePage() {
   const track = usePlayerStore(currentTrackSelector)
-  const coverUrl = track ? getTrackCoverUrl(track.id) : FALLBACK_COVER
+  const coverUrl = track ? getTrackCoverUrl(track.id, track.album?.cover_path) : FALLBACK_COVER
   const colors = useColorThief(coverUrl)
   const { bassSmoothed } = useAudioAnalyser()
 

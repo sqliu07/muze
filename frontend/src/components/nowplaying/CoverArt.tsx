@@ -11,7 +11,7 @@ function CoverArt({ track, size = 300 }: CoverArtProps) {
   if (track?.has_cover) {
     return (
       <img
-        src={getTrackCoverUrl(track.id)}
+        src={getTrackCoverUrl(track.id, track.album?.cover_path)}
         alt={track.title}
         crossOrigin="anonymous"
         className="rounded-2xl shadow-2xl"

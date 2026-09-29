@@ -1,8 +1,9 @@
 import { useMemo } from "react"
 import { usePlayerStore } from "@/store/playerStore"
-import { parseLrc, getCurrentLineIndex, matchTranslations } from "@/lib/lrcParser"
+import { parseLrc, getCurrentLineIndex, isMostlyCjkLyrics, matchTranslations } from "@/lib/lrcParser"
 import type { LyricLine } from "@/lib/lrcParser"
 import type { LyricsOut } from "@/types/api"
+import { resolveInterludeMotion, type InterludePhase } from "@/lib/interludeAnimation"
 import {
   DEFAULT_WORD_GAP,
   SEGMENT_TAIL_MIN,
@@ -10,7 +11,7 @@ import {
   SEGMENT_END_MIN_PAD,
   SEGMENT_END_NEXT_PAD,
   PRELUDE_MIN_DURATION,
-  PRELUDE_HIDE_BEFORE,
+  PRELUDE_EXIT_WINDOW,
   PRELUDE_FILL_WINDOW_MAX,
   PRELUDE_FILL_WINDOW_MIN,
   PRELUDE_FILL_WINDOW_RATIO,
@@ -21,16 +22,28 @@ import {
   INTERLUDE_HIDE_BEFORE_MIN,
   INTERLUDE_HIDE_BEFORE_MAX,
   INTERLUDE_HIDE_BEFORE_RATIO,
+  INTERLUDE_EXIT_RATIO,
+  INTERLUDE_EXIT_DURATION_MIN,
+  INTERLUDE_EXIT_DURATION_MAX,
+  INTERLUDE_DOT_BREATHE_DURATION,
   INTERLUDE_LAST_WORD_PAD,
   INTERLUDE_NO_WORDS_FALLBACK,
 } from "@/config/lyrics"
 
 export interface LyricSyncResult {
-  lines: { time: number; text: string; words?: { start: number; text: string }[]; translation?: string }[]
+  lines: {
+    time: number
+    text: string
+    words?: { start: number; end?: number; text: string }[]
+    translation?: string
+  }[]
   currentIndex: number
   interludeProgress: number | null
   interludeAfterIndex: number | null
-  interludeHideBefore: number | null  // 动态计算的间奏提前结束时间，供组件同步退出动画
+  interludePhase: InterludePhase
+  interludeBreathPhase: number
+  interludeExitProgress: number
+  interludeCollapseProgress: number
   currentLineProgress: number
 }
 
@@ -42,13 +55,29 @@ export function useLyricSync(
 
   const timingLines = useMemo(() => {
     if (!lyrics?.content) return []
-    const parsed = parseLrc(lyrics.content)
+    let parsed = parseLrc(lyrics.content)
     // 当启用翻译且有翻译内容时，按时间戳匹配翻译行
-    if (showTranslation && lyrics.translated_content) {
-      return matchTranslations(parsed, lyrics.translated_content)
+    if (
+      showTranslation &&
+      lyrics.translated_content &&
+      !isMostlyCjkLyrics(lyrics.content)
+    ) {
+      parsed = matchTranslations(parsed, lyrics.translated_content)
     }
-    return parsed
-  }, [lyrics?.content, lyrics?.translated_content, showTranslation])
+    // Match translations against source timestamps before shifting both line and
+    // word timings. Rendering and click-to-seek share the resulting audio times.
+    const offset = (lyrics.offset_ms ?? 0) / 1000
+    if (offset === 0) return parsed
+    return parsed.map((line) => ({
+      ...line,
+      time: line.time + offset,
+      words: line.words?.map((word) => ({
+        ...word,
+        start: word.start + offset,
+        end: word.end === undefined ? undefined : word.end + offset,
+      })),
+    }))
+  }, [lyrics?.content, lyrics?.translated_content, lyrics?.offset_ms, showTranslation])
 
   const { lines, timingToVisible } = useMemo(() => {
     const visibleLines: LyricLine[] = []
@@ -87,11 +116,22 @@ export function useLyricSync(
     const firstLineTime = lines[0].time
     if (firstLineTime < PRELUDE_MIN_DURATION) return null
 
-    if (currentTime >= firstLineTime - PRELUDE_HIDE_BEFORE) return null
-
     const fillWindow = Math.min(PRELUDE_FILL_WINDOW_MAX, Math.max(PRELUDE_FILL_WINDOW_MIN, firstLineTime * PRELUDE_FILL_WINDOW_RATIO))
     const fillStart = Math.max(0, firstLineTime - fillWindow)
-    const fillEnd = firstLineTime - PRELUDE_FILL_END_PAD
+    const exitDuration = Math.max(
+      INTERLUDE_EXIT_DURATION_MIN,
+      Math.min(INTERLUDE_EXIT_DURATION_MAX, PRELUDE_EXIT_WINDOW * INTERLUDE_EXIT_RATIO),
+    )
+    const motion = resolveInterludeMotion({
+      currentTime,
+      interludeStart: 0,
+      nextLineTime: firstLineTime,
+      hideBefore: PRELUDE_EXIT_WINDOW,
+      exitDuration,
+      breatheDuration: INTERLUDE_DOT_BREATHE_DURATION,
+    })
+    if (motion.phase === "hidden") return null
+    const fillEnd = Math.min(firstLineTime - PRELUDE_FILL_END_PAD, motion.exitStart)
 
     return {
       progress:
@@ -100,6 +140,7 @@ export function useLyricSync(
           : Math.max(0, Math.min(1, (currentTime - fillStart) / (fillEnd - fillStart))),
       // -1 表示前奏点阵（首句之前），由视图层固定位置渲染。
       afterIndex: -1,
+      ...motion,
     }
   }, [lines, currentTime])
 
@@ -113,7 +154,8 @@ export function useLyricSync(
     // 使用当前句最后一个字到下一句第一个字的间隔判断，避免长歌词行误判
     const lastWordEnd =
       currentLine.words && currentLine.words.length > 0
-        ? currentLine.words[currentLine.words.length - 1].start + INTERLUDE_LAST_WORD_PAD
+        ? currentLine.words[currentLine.words.length - 1].end ??
+          currentLine.words[currentLine.words.length - 1].start + INTERLUDE_LAST_WORD_PAD
         : currentLine.time + INTERLUDE_NO_WORDS_FALLBACK
     const firstWordStart =
       nextLine.words && nextLine.words.length > 0
@@ -129,11 +171,22 @@ export function useLyricSync(
     )
 
     const interludeStart = lastWordEnd + INTERLUDE_LEAD_IN
-
-    if (currentTime < interludeStart || currentTime >= firstWordStart - hideBefore) return null
+    const exitDuration = Math.max(
+      INTERLUDE_EXIT_DURATION_MIN,
+      Math.min(INTERLUDE_EXIT_DURATION_MAX, hideBefore * INTERLUDE_EXIT_RATIO),
+    )
+    const motion = resolveInterludeMotion({
+      currentTime,
+      interludeStart,
+      nextLineTime: firstWordStart,
+      hideBefore,
+      exitDuration,
+      breatheDuration: INTERLUDE_DOT_BREATHE_DURATION,
+    })
+    if (motion.phase === "hidden") return null
 
     const fillStart = interludeStart
-    const fillEnd = firstWordStart - INTERLUDE_FILL_BEFORE_NEXT
+    const fillEnd = Math.min(firstWordStart - INTERLUDE_FILL_BEFORE_NEXT, motion.exitStart)
 
     return {
       progress:
@@ -141,7 +194,7 @@ export function useLyricSync(
           ? 1
           : Math.max(0, Math.min(1, (currentTime - fillStart) / (fillEnd - fillStart))),
       afterIndex: currentIndex,
-      hideBefore,
+      ...motion,
     }
   }, [currentIndex, lines, currentTime])
 
@@ -169,6 +222,7 @@ export function useLyricSync(
       : DEFAULT_WORD_GAP
 
     const segmentEnds = words.map((w, i) => {
+      if (w.end !== undefined && w.end > w.start) return w.end
       if (i < words.length - 1) return words[i + 1].start
       const tail = Math.max(SEGMENT_TAIL_MIN, Math.min(SEGMENT_TAIL_MAX, avgGap))
       const fallbackEnd = w.start + tail
@@ -211,7 +265,10 @@ export function useLyricSync(
     currentIndex,
     interludeProgress: interludeState?.progress ?? null,
     interludeAfterIndex: interludeState?.afterIndex ?? null,
-    interludeHideBefore: inSongInterludeState?.hideBefore ?? null,
+    interludePhase: interludeState?.phase ?? "hidden",
+    interludeBreathPhase: interludeState?.breathPhase ?? 0,
+    interludeExitProgress: interludeState?.exitProgress ?? 0,
+    interludeCollapseProgress: interludeState?.collapseProgress ?? 0,
     currentLineProgress,
   }
 }

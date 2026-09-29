@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
-import BassBlobs from "@/components/prototype/BassBlobs"
+import { SpectrumVisualizer } from "./SpectrumVisualizer"
+import ArtworkBackdrop from "./ArtworkBackdrop"
+import BackgroundDebugPanel from "./BackgroundDebugPanel"
 import {
   ChevronDown,
   Play,
@@ -12,12 +14,20 @@ import {
 } from "lucide-react"
 import { usePlayerStore, currentTrackSelector } from "@/store/playerStore"
 import { useUIStore } from "@/store/uiStore"
-import { useLyrics, useSearchLyrics, useRestoreLyrics, useSaveLyrics, useSearchLddcCandidates } from "@/api/hooks/useLyrics"
+import {
+  useLyrics,
+  useSearchLyrics,
+  useRestoreLyrics,
+  useSaveLyrics,
+  useSearchLddcCandidates,
+  useUpdateLyricsOffset,
+} from "@/api/hooks/useLyrics"
 import { useToggleFavorite } from "@/api/hooks/useFavorites"
 import { usePlaylists, useAddTracksToPlaylist } from "@/api/hooks/usePlaylists"
+import { useApplyTrackCover, useSearchTrackCover, useSearchTrackCoverCandidates } from "@/api/hooks/useTracks"
 import { seekAudio } from "@/hooks/useAudio"
 import { getTrackCoverUrl } from "@/api/client"
-import type { LyricsCandidate } from "@/types/api"
+import type { LyricsCandidate, TrackCoverCandidate } from "@/types/api"
 import { useColorThief } from "@/hooks/useColorThief"
 import CoverArt from "./CoverArt"
 import LyricsView from "./LyricsView"
@@ -126,6 +136,7 @@ function NowPlayingPage() {
   const duration = currentTrack?.duration ?? 0
 
   const [lyricsVisible, setLyricsVisible] = useState(true)
+  const [spectrumVisible, setSpectrumVisible] = useState(false)
   const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false)
   const [searchChoiceDialogOpen, setSearchChoiceDialogOpen] = useState(false)
   const [searchChoiceDetail, setSearchChoiceDetail] = useState<{
@@ -143,19 +154,31 @@ function NowPlayingPage() {
   const [candidatesOpen, setCandidatesOpen] = useState(false)
   const [candidates, setCandidates] = useState<LyricsCandidate[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(false)
+  const [coverSearchOpen, setCoverSearchOpen] = useState(false)
+  const [coverTitle, setCoverTitle] = useState("")
+  const [coverArtist, setCoverArtist] = useState("")
+  const [coverCandidatesOpen, setCoverCandidatesOpen] = useState(false)
+  const [coverCandidates, setCoverCandidates] = useState<TrackCoverCandidate[]>([])
+  const [coverCandidatesLoading, setCoverCandidatesLoading] = useState(false)
   const searchLddcMutation = useSearchLddcCandidates()
 
   const { data: lyrics } = useLyrics(currentTrack?.id ?? 0)
   const { data: playlists } = usePlaylists()
   const searchLyricsMutation = useSearchLyrics()
+  const searchTrackCoverMutation = useSearchTrackCover()
+  const searchTrackCoverCandidatesMutation = useSearchTrackCoverCandidates()
+  const applyTrackCoverMutation = useApplyTrackCover()
   const addTracksToPlaylist = useAddTracksToPlaylist()
   const toggleFavorite = useToggleFavorite()
   const restoreLyricsMutation = useRestoreLyrics()
   const saveLyricsMutation = useSaveLyrics()
+  const updateLyricsOffsetMutation = useUpdateLyricsOffset()
   const [manualLyricsOpen, setManualLyricsOpen] = useState(false)
   const [manualLyricsText, setManualLyricsText] = useState("")
 
-  const coverUrl = currentTrack?.has_cover ? getTrackCoverUrl(currentTrack.id) : null
+  const coverUrl = currentTrack?.has_cover
+    ? getTrackCoverUrl(currentTrack.id, currentTrack.album?.cover_path)
+    : null
   const colors = useColorThief(coverUrl)
 
   const hasSearchedOnline = Boolean(
@@ -277,6 +300,75 @@ function NowPlayingPage() {
     }
   }, [currentTrack, restoreLyricsMutation, setTransientFeedback])
 
+  const searchOnlineCover = useCallback(async () => {
+    if (!currentTrack) return
+    setTransientFeedback("正在联网搜索封面...", 0)
+    try {
+      const updatedTrack = await searchTrackCoverMutation.mutateAsync(currentTrack.id)
+      usePlayerStore.getState().replaceQueuedTrack(updatedTrack)
+      setTransientFeedback("已更新封面")
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })
+          ?.response?.data?.detail
+      setTransientFeedback(msg || "搜索封面失败，请稍后重试。")
+    }
+  }, [currentTrack, searchTrackCoverMutation, setTransientFeedback])
+
+  const searchCoverCandidates = useCallback(async () => {
+    if (!currentTrack || !coverTitle.trim()) return
+    setCoverSearchOpen(false)
+    setCoverCandidatesLoading(true)
+    setTransientFeedback(`正在搜索封面「${coverTitle.trim()}」...`, 0)
+    try {
+      const result = await searchTrackCoverCandidatesMutation.mutateAsync({
+        id: currentTrack.id,
+        payload: {
+          title: coverTitle.trim(),
+          artist: coverArtist.trim() || undefined,
+          limit: 8,
+        },
+      })
+      if (result.length === 0) {
+        setTransientFeedback("未找到封面候选，请换个关键词试试")
+        return
+      }
+      setCoverCandidates(result)
+      setCoverCandidatesOpen(true)
+      setTransientFeedback(`找到 ${result.length} 个封面候选，请选择`)
+    } catch {
+      setTransientFeedback("搜索封面失败，请稍后重试")
+    } finally {
+      setCoverCandidatesLoading(false)
+    }
+  }, [
+    coverArtist,
+    coverTitle,
+    currentTrack,
+    searchTrackCoverCandidatesMutation,
+    setTransientFeedback,
+  ])
+
+  const applyCoverCandidate = useCallback(async (candidate: TrackCoverCandidate) => {
+    if (!currentTrack) return
+    setCoverCandidatesOpen(false)
+    setTransientFeedback("正在应用封面...", 0)
+    try {
+      const updatedTrack = await applyTrackCoverMutation.mutateAsync({
+        id: currentTrack.id,
+        payload: {
+          image_url: candidate.image_url,
+          album_title: candidate.album_title,
+          artist_name: candidate.artist_name,
+        },
+      })
+      usePlayerStore.getState().replaceQueuedTrack(updatedTrack)
+      setTransientFeedback("已更新封面")
+    } catch {
+      setTransientFeedback("应用封面失败，请稍后重试。")
+    }
+  }, [applyTrackCoverMutation, currentTrack, setTransientFeedback])
+
   const saveManualLyrics = useCallback(async () => {
     if (!currentTrack || !manualLyricsText.trim()) return
     try {
@@ -297,6 +389,25 @@ function NowPlayingPage() {
     lyrics?.source &&
     !["embedded", "lrc"].includes(lyrics.source)
   )
+
+  const adjustLyricsOffset = useCallback(async (offsetMs: number) => {
+    if (!currentTrack || !lyrics) return
+    const nextOffset = Math.max(-30_000, Math.min(30_000, offsetMs))
+    try {
+      await updateLyricsOffsetMutation.mutateAsync({
+        trackId: currentTrack.id,
+        offsetMs: nextOffset,
+      })
+      const seconds = Math.abs(nextOffset) / 1000
+      setTransientFeedback(
+        nextOffset === 0
+          ? "已重置歌词同步"
+          : `歌词已${nextOffset < 0 ? "提前" : "延后"} ${seconds.toFixed(1)} 秒`
+      )
+    } catch {
+      setTransientFeedback("歌词同步调整失败")
+    }
+  }, [currentTrack, lyrics, setTransientFeedback, updateLyricsOffsetMutation])
 
   const addCurrentTrackToPlaylist = useCallback(async (playlistId: number) => {
     if (!currentTrack) return
@@ -373,6 +484,62 @@ function NowPlayingPage() {
         >
           手动粘贴歌词
         </DropdownMenuItem>
+        {lyrics?.content && (
+          <>
+            <DropdownMenuSeparator className="bg-white/10" />
+            <DropdownMenuItem disabled className="text-white/45 opacity-100">
+              同步偏移：{(lyrics.offset_ms ?? 0) > 0 ? "+" : ""}{((lyrics.offset_ms ?? 0) / 1000).toFixed(1)} 秒
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => event.preventDefault()}
+              onClick={() => adjustLyricsOffset((lyrics.offset_ms ?? 0) - 500)}
+              disabled={updateLyricsOffsetMutation.isPending}
+              className="focus:bg-white/10 focus:text-white"
+            >
+              歌词提前 0.5 秒
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => event.preventDefault()}
+              onClick={() => adjustLyricsOffset((lyrics.offset_ms ?? 0) + 500)}
+              disabled={updateLyricsOffsetMutation.isPending}
+              className="focus:bg-white/10 focus:text-white"
+            >
+              歌词延后 0.5 秒
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => event.preventDefault()}
+              onClick={() => adjustLyricsOffset(0)}
+              disabled={updateLyricsOffsetMutation.isPending || (lyrics.offset_ms ?? 0) === 0}
+              className="focus:bg-white/10 focus:text-white"
+            >
+              重置歌词同步
+            </DropdownMenuItem>
+          </>
+        )}
+        <DropdownMenuItem
+          onSelect={(e) => e.preventDefault()}
+          onClick={searchOnlineCover}
+          disabled={!currentTrack || searchTrackCoverMutation.isPending}
+          className="focus:bg-white/10 focus:text-white"
+        >
+          {searchTrackCoverMutation.isPending
+            ? "搜索封面中..."
+            : currentTrack?.has_cover
+              ? "重搜封面"
+              : "搜索封面"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(e) => e.preventDefault()}
+          onClick={() => {
+            setCoverTitle(currentTrack?.album?.title || currentTrack?.title || "")
+            setCoverArtist(currentTrack?.artist?.name ?? "")
+            setCoverSearchOpen(true)
+          }}
+          disabled={!currentTrack}
+          className="focus:bg-white/10 focus:text-white"
+        >
+          指定搜索封面
+        </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
           onSelect={(e) => e.preventDefault()}
@@ -397,25 +564,11 @@ function NowPlayingPage() {
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="fixed inset-0 z-50 flex flex-col overflow-hidden"
         >
-          {/* L0: 专辑取色底色 */}
-          <div
-            className="pointer-events-none absolute inset-0 transition-colors duration-700"
-            style={{ backgroundColor: `rgb(${colors[0][0]}, ${colors[0][1]}, ${colors[0][2]})` }}
+          <ArtworkBackdrop
+            colors={colors}
+            reducedMotion={Boolean(prefersReducedMotion)}
           />
-
-          {/* L1: BassBlobs — 音频驱动的有机色块背景 */}
-          <BassBlobs colors={colors} />
-
-          {/* L2: 底部渐变 — 用主色替代黑色 */}
-          <div
-            className={`pointer-events-none absolute bottom-0 left-0 right-0 h-[50%] ${
-              prefersReducedMotion ? "" : "animate-gradient-breathe"
-            }`}
-            style={{
-              background: `linear-gradient(to top, rgba(${colors[0][0]}, ${colors[0][1]}, ${colors[0][2]}, 0.7) 0%, transparent 60%)`,
-              willChange: "transform, opacity",
-            }}
-          />
+          <BackgroundDebugPanel />
           {/* 顶部栏 */}
           <div className="relative z-10 flex items-center px-4 py-3">
             <button
@@ -514,15 +667,36 @@ function NowPlayingPage() {
                       <SkipForward className="h-6 w-6" />
                     </button>
                   </div>
-                  <button
-                    onClick={toggleLyrics}
-                    className={`text-base font-bold transition-colors hover:text-white ${
-                      lyricsVisible ? "text-white" : "text-white/30"
-                    }`}
-                  >
-                    词
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSpectrumVisible((v) => !v)}
+                      className={`text-base font-bold transition-colors hover:text-white ${
+                        spectrumVisible ? "text-white" : "text-white/30"
+                      }`}
+                    >
+                      谱
+                    </button>
+                    <button
+                      onClick={toggleLyrics}
+                      className={`text-base font-bold transition-colors hover:text-white ${
+                        lyricsVisible ? "text-white" : "text-white/30"
+                      }`}
+                    >
+                      词
+                    </button>
+                  </div>
                 </div>
+
+                {/* 频谱可视化 */}
+                {spectrumVisible && (
+                  <div className="mt-4 w-full max-w-sm px-6">
+                    <SpectrumVisualizer
+                      visible={spectrumVisible}
+                      height={64}
+                      color="rgba(255, 255, 255, 0.7)"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 右侧：歌词 */}
@@ -615,15 +789,36 @@ function NowPlayingPage() {
                       <SkipForward className="h-6 w-6" />
                     </button>
                   </div>
-                  <button
-                    onClick={toggleLyrics}
-                    className={`text-base font-bold transition-colors hover:text-white ${
-                      lyricsVisible ? "text-white" : "text-white/30"
-                    }`}
-                  >
-                    词
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSpectrumVisible((v) => !v)}
+                      className={`text-base font-bold transition-colors hover:text-white ${
+                        spectrumVisible ? "text-white" : "text-white/30"
+                      }`}
+                    >
+                      谱
+                    </button>
+                    <button
+                      onClick={toggleLyrics}
+                      className={`text-base font-bold transition-colors hover:text-white ${
+                        lyricsVisible ? "text-white" : "text-white/30"
+                      }`}
+                    >
+                      词
+                    </button>
+                  </div>
                 </div>
+
+                {/* 频谱可视化 */}
+                {spectrumVisible && (
+                  <div className="mt-3 w-full max-w-sm px-6">
+                    <SpectrumVisualizer
+                      visible={spectrumVisible}
+                      height={48}
+                      color="rgba(255, 255, 255, 0.7)"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 歌词 */}
@@ -817,6 +1012,95 @@ function NowPlayingPage() {
                   className="rounded-md bg-white px-3 py-2 text-sm text-black transition-colors hover:bg-white/90 disabled:opacity-60"
                 >
                   搜索
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 指定搜索封面弹窗 */}
+          <Dialog open={coverSearchOpen} onOpenChange={setCoverSearchOpen}>
+            <DialogContent className="border-white/15 bg-black/80 text-white backdrop-blur-xl">
+              <DialogHeader>
+                <DialogTitle>指定搜索封面</DialogTitle>
+                <DialogDescription className="text-white/60">
+                  手动指定专辑名和歌手进行搜索
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs text-white/50">专辑或歌曲</label>
+                  <input
+                    value={coverTitle}
+                    onChange={(e) => setCoverTitle(e.target.value)}
+                    className="w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                    placeholder="专辑名称或歌曲名称"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-white/50">歌手</label>
+                  <input
+                    value={coverArtist}
+                    onChange={(e) => setCoverArtist(e.target.value)}
+                    className="w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                    placeholder="歌手名称（可选）"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <button
+                  onClick={() => setCoverSearchOpen(false)}
+                  className="rounded-md border border-white/20 px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={searchCoverCandidates}
+                  disabled={!coverTitle.trim() || coverCandidatesLoading}
+                  className="rounded-md bg-white px-3 py-2 text-sm text-black transition-colors hover:bg-white/90 disabled:opacity-60"
+                >
+                  搜索
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 封面候选选择弹窗 */}
+          <Dialog open={coverCandidatesOpen} onOpenChange={setCoverCandidatesOpen}>
+            <DialogContent className="border-white/15 bg-black/80 text-white backdrop-blur-xl max-w-lg">
+              <DialogHeader>
+                <DialogTitle>选择封面</DialogTitle>
+                <DialogDescription className="text-white/60">
+                  找到 {coverCandidates.length} 个候选，点击选择要使用的封面
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid max-h-96 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
+                {coverCandidates.map((candidate) => (
+                  <button
+                    key={candidate.image_url}
+                    onClick={() => applyCoverCandidate(candidate)}
+                    disabled={applyTrackCoverMutation.isPending}
+                    className="min-w-0 rounded-md border border-white/10 bg-white/5 p-2 text-left transition-colors hover:bg-white/10 disabled:opacity-60"
+                  >
+                    <img
+                      src={candidate.thumbnail_url || candidate.image_url}
+                      alt={candidate.album_title || "封面候选"}
+                      className="aspect-square w-full rounded object-cover"
+                    />
+                    <p className="mt-2 truncate text-xs font-medium text-white/85">
+                      {candidate.album_title || "未知专辑"}
+                    </p>
+                    <p className="truncate text-[11px] text-white/50">
+                      {candidate.artist_name || "未知艺术家"}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <DialogFooter>
+                <button
+                  onClick={() => setCoverCandidatesOpen(false)}
+                  className="rounded-md border border-white/20 px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"
+                >
+                  取消
                 </button>
               </DialogFooter>
             </DialogContent>
