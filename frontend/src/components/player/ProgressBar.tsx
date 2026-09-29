@@ -22,6 +22,7 @@ export function ProgressBar({ onSeek }: ProgressBarProps) {
         step={1}
         onValueChange={([value]) => onSeek(value)}
         className="flex-1"
+        data-hide-thumb
       />
       <span className="w-10 text-xs text-muted-foreground">
         {formatDuration(duration)}

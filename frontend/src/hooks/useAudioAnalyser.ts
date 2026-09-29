@@ -1,113 +1,103 @@
-import { useEffect, useRef, useState } from "react"
-import { getAudioElement, getAudioContext } from "@/hooks/useAudio"
-
-// 低频分析配置 (0-150Hz)
-const BASS_MIN_HZ = 20
-const BASS_MAX_HZ = 150
-const SMOOTH_FACTOR = 0.35 // 指数平滑系数
+import { useEffect, useState } from "react"
+import { getAudioAnalyserNode, getAudioElement } from "@/hooks/useAudio"
+import { bassEnergy as computeBassEnergy } from "@/lib/spectrum"
 
 export interface AudioAnalyserResult {
   bassEnergy: number
   bassSmoothed: number
+  /** Shared mutable buffer: read inside the frame callback, never copy every frame. */
+  spectrumData: Uint8Array
+  sampleRate: number
 }
 
-let analyserNode: AnalyserNode | null = null
-let frequencyData: Uint8Array | null = null
-let sourceConnected = false
+const frame: AudioAnalyserResult = {
+  bassEnergy: 0, bassSmoothed: 0, spectrumData: new Uint8Array(0), sampleRate: 48000,
+}
+const listeners = new Set<(frame: AudioAnalyserResult) => void>()
+let stopSampling: (() => void) | undefined
 
-function setupAnalyser(): AnalyserNode | null {
-  if (analyserNode) return analyserNode
-
-  try {
-    const ctx = getAudioContext()
-
-    // 先恢复 AudioContext，避免 createMediaElementSource 后静音
-    if (ctx.state === "suspended") {
-      ctx.resume()
-    }
-
+/** One polling loop for all visible consumers; no AudioContext is created by rendering. */
+export function subscribeAudioAnalysis(listener: (frame: AudioAnalyserResult) => void): () => void {
+  listeners.add(listener)
+  if (!stopSampling) {
     const audio = getAudioElement()
-
-    analyserNode = ctx.createAnalyser()
-    analyserNode.fftSize = 512
-    analyserNode.smoothingTimeConstant = 0.4
-
-    if (!sourceConnected) {
-      const source = ctx.createMediaElementSource(audio)
-      source.connect(analyserNode)
-      analyserNode.connect(ctx.destination)
-      sourceConnected = true
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)")
+    let raf: number | null = null
+    let lastFrame = -Infinity
+    let data = new Uint8Array(0)
+    const notify = () => listeners.forEach((callback) => callback(frame))
+    const canSample = () => !audio.paused && !audio.ended && !document.hidden && !motion.matches
+    const tick = (now: number) => {
+      raf = null
+      if (!canSample()) return
+      if (now - lastFrame >= 1000 / 30) {
+        lastFrame = now
+        const node = getAudioAnalyserNode()
+        if (node && node.context.state === "running") {
+          if (data.length !== node.frequencyBinCount) data = new Uint8Array(node.frequencyBinCount)
+          node.getByteFrequencyData(data)
+          frame.spectrumData = data
+          frame.sampleRate = node.context.sampleRate
+          frame.bassEnergy = computeBassEnergy(data, frame.sampleRate)
+          frame.bassSmoothed += (frame.bassEnergy - frame.bassSmoothed) * 0.35
+          notify()
+        }
+      }
+      raf = requestAnimationFrame(tick)
     }
-
-    frequencyData = new Uint8Array(analyserNode.frequencyBinCount)
-    return analyserNode
-  } catch {
-    return null
-  }
-}
-
-function computeBassEnergy(): number {
-  const node = setupAnalyser()
-  if (!node || !frequencyData) return 0
-
-  node.getByteFrequencyData(frequencyData)
-
-  const sampleRate = getAudioContext().sampleRate
-  const binCount = node.frequencyBinCount
-  const fftSize = node.fftSize
-  const binWidth = sampleRate / fftSize
-
-  const loBin = Math.max(0, Math.floor(BASS_MIN_HZ / binWidth))
-  const hiBin = Math.min(binCount - 1, Math.floor(BASS_MAX_HZ / binWidth))
-
-  if (hiBin <= loBin) return 0
-
-  let sum = 0
-  for (let i = loBin; i <= hiBin; i += 1) {
-    sum += frequencyData[i] / 255
-  }
-  return sum / (hiBin - loBin + 1)
-}
-
-export function useAudioAnalyser(): AudioAnalyserResult {
-  const [bassEnergy, setBassEnergy] = useState(0)
-  const [bassSmoothed, setBassSmoothed] = useState(0)
-  const smoothedRef = useRef(0)
-  const rafRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    let active = true
-
-    // 处理 AudioContext 自动挂起（浏览器 autoplay 策略）
-    const ctx = getAudioContext()
-    if (ctx.state === "suspended") {
-      ctx.resume()
-    }
-
-    const tick = () => {
-      if (!active) return
-      const raw = computeBassEnergy()
-      smoothedRef.current =
-        smoothedRef.current * (1 - SMOOTH_FACTOR) + raw * SMOOTH_FACTOR
-
-      setBassEnergy(raw)
-      setBassSmoothed(smoothedRef.current)
-
-      rafRef.current = requestAnimationFrame(tick)
-    }
-
-    rafRef.current = requestAnimationFrame(tick)
-
-    return () => {
-      active = false
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
+    const update = () => {
+      if (raf !== null) cancelAnimationFrame(raf)
+      raf = null
+      if (canSample()) {
+        lastFrame = -Infinity
+        raf = requestAnimationFrame(tick)
+      } else {
+        data.fill(0)
+        frame.bassEnergy = 0
+        frame.bassSmoothed = 0
+        notify()
       }
     }
-  }, [])
+    const events = ["playing", "pause", "ended", "emptied"] as const
+    events.forEach((event) => audio.addEventListener(event, update))
+    document.addEventListener("visibilitychange", update)
+    motion.addEventListener("change", update)
+    stopSampling = () => {
+      if (raf !== null) cancelAnimationFrame(raf)
+      events.forEach((event) => audio.removeEventListener(event, update))
+      document.removeEventListener("visibilitychange", update)
+      motion.removeEventListener("change", update)
+      frame.spectrumData.fill(0)
+      frame.bassEnergy = 0
+      frame.bassSmoothed = 0
+    }
+    update()
+  }
+  listener(frame)
+  return () => {
+    listeners.delete(listener)
+    if (!listeners.size) {
+      stopSampling?.()
+      stopSampling = undefined
+    }
+  }
+}
 
-  return { bassEnergy, bassSmoothed }
+/** Compatibility for prototype readouts. Canvas consumers subscribe without React state. */
+export function useAudioAnalyser(active = true): AudioAnalyserResult {
+  const [result, setResult] = useState<AudioAnalyserResult>(() => ({ ...frame }))
+  useEffect(() => {
+    if (!active) return
+    let lastUpdate = -Infinity
+    return subscribeAudioAnalysis((next) => {
+      const now = performance.now()
+      if (now - lastUpdate >= 100 || next.bassEnergy === 0) {
+        lastUpdate = now
+        setResult({ ...next })
+      }
+    })
+  }, [active])
+  return result
 }
 
 export default useAudioAnalyser

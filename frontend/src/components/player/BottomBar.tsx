@@ -5,6 +5,7 @@ import { getTrackCoverUrl } from "@/api/client"
 import { PlaybackControls } from "./PlaybackControls"
 import { ProgressBar } from "./ProgressBar"
 import { VolumeSlider } from "./VolumeSlider"
+import { EqualizerControl } from "./EqualizerControl"
 
 interface BottomBarProps {
   onSeek: (time: number) => void
@@ -29,7 +30,7 @@ export function BottomBar({ onSeek }: BottomBarProps) {
             >
               {currentTrack.has_cover ? (
                 <img
-                  src={getTrackCoverUrl(currentTrack.id)}
+                  src={getTrackCoverUrl(currentTrack.id, currentTrack.album?.cover_path)}
                   alt={currentTrack.title}
                   className="h-full w-full rounded object-cover"
                 />
@@ -60,6 +61,7 @@ export function BottomBar({ onSeek }: BottomBarProps) {
 
       {/* 右侧：音量 */}
       <div className="flex w-48 items-center justify-end gap-2">
+        <EqualizerControl />
         <VolumeSlider />
       </div>
     </div>

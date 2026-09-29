@@ -7,7 +7,15 @@ import { seekAudio } from "@/hooks/useAudio"
 export type Track = TrackOut
 
 export type PlayMode = "sequential" | "repeat-all" | "repeat-one" | "shuffle"
-
+import {
+  createEqualizerState,
+  clampGain,
+  normalizeEqualizerState,
+  type EqualizerPresetName,
+  type EqualizerState,
+} from "@/lib/equalizer"
+export { DEFAULT_EQUALIZER_BANDS, EQUALIZER_PRESETS, EQUALIZER_PRESET_PREAMPS } from "@/lib/equalizer"
+export type { EqualizerBand, EqualizerPreset, EqualizerPresetName, EqualizerState } from "@/lib/equalizer"
 interface PlayerState {
   queue: Track[]
   currentIndex: number
@@ -15,6 +23,7 @@ interface PlayerState {
   volume: number
   playMode: PlayMode
   currentTime: number
+  equalizer: EqualizerState
 
   setQueue: (tracks: Track[], startIndex?: number) => void
   playTrack: (track: Track) => void
@@ -26,6 +35,12 @@ interface PlayerState {
   setVolume: (volume: number) => void
   setPlayMode: (mode: PlayMode) => void
   setCurrentTime: (time: number) => void
+  setEqualizerEnabled: (enabled: boolean) => void
+  setEqualizerPreamp: (gain: number) => void
+  setEqualizerBandGain: (frequency: number, gain: number) => void
+  setEqualizerPreset: (preset: EqualizerPresetName) => void
+  resetEqualizer: () => void
+  replaceQueuedTrack: (track: Track) => void
   cyclePlayMode: () => void
   toggleCurrentTrackFavorite: () => void
 }
@@ -46,6 +61,7 @@ export const usePlayerStore = create<PlayerState>()(
       volume: 0.8,
       playMode: "sequential",
       currentTime: 0,
+      equalizer: createEqualizerState(),
 
       setQueue: (tracks, startIndex = 0) =>
         set({
@@ -141,6 +157,46 @@ export const usePlayerStore = create<PlayerState>()(
       setVolume: (volume) => set({ volume }),
       setPlayMode: (mode) => set({ playMode: mode }),
       setCurrentTime: (time) => set({ currentTime: time }),
+      setEqualizerEnabled: (enabled) =>
+        set((state) => ({
+          equalizer: { ...state.equalizer, enabled },
+        })),
+      setEqualizerPreamp: (gain) =>
+        set((state) => ({
+          equalizer: {
+            ...state.equalizer,
+            preset: "custom",
+            preamp: clampGain(gain),
+          },
+        })),
+      setEqualizerBandGain: (frequency, gain) =>
+        set((state) => ({
+          equalizer: {
+            ...state.equalizer,
+            preset: "custom",
+            bands: state.equalizer.bands.map((band) =>
+              band.frequency === frequency
+                ? { ...band, gain: clampGain(gain) }
+                : band
+            ),
+          },
+        })),
+      setEqualizerPreset: (preset) =>
+        set((state) => ({
+          equalizer: {
+            ...createEqualizerState(preset, state.equalizer.enabled),
+          },
+        })),
+      resetEqualizer: () =>
+        set((state) => ({
+          equalizer: createEqualizerState("flat", state.equalizer.enabled),
+        })),
+      replaceQueuedTrack: (track) =>
+        set((state) => ({
+          queue: state.queue.map((queued) =>
+            queued.id === track.id ? track : queued
+          ),
+        })),
 
       cyclePlayMode: () =>
         set((state) => {
@@ -164,7 +220,16 @@ export const usePlayerStore = create<PlayerState>()(
       partialize: (state) => ({
         volume: state.volume,
         playMode: state.playMode,
+        equalizer: state.equalizer,
       }),
+      merge: (persisted, current) => {
+        const persistedState = persisted as Partial<PlayerState> | undefined
+        return {
+          ...current,
+          ...persistedState,
+          equalizer: normalizeEqualizerState(persistedState?.equalizer),
+        }
+      },
     }
   )
 )
