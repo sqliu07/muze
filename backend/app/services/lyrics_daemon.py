@@ -57,7 +57,7 @@ def batch_search_word_lyrics(db: Session, limit: int = _BATCH_LIMIT) -> int:
 
         artist_name = track.artist.name if track.artist else None
         try:
-            result = search_online_lyrics(track.title, artist_name)
+            result = search_online_lyrics(track.title, artist_name, track.duration)
         except Exception:
             logger.exception("搜索歌词失败: %s - %s", track.title, artist_name)
             continue

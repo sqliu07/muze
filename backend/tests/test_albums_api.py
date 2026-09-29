@@ -117,3 +117,67 @@ def test_album_tracks_fallback_sort_by_filename_when_track_number_missing(db_ses
     result = albums_api.get_album(album.id, db_session)
     names = [t["title"] for t in result["tracks"]]
     assert names == ["爱在西元前", "上海1943"]
+
+
+def test_album_cover_candidates_and_apply_selected(db_session, tmp_path, monkeypatch):
+    import app.api.albums as albums_module
+    import app.services.cover_service as cover_service
+
+    artist = Artist(name="周杰伦")
+    db_session.add(artist)
+    db_session.flush()
+    album = Album(title="范特西", artist_id=artist.id)
+    db_session.add(album)
+    db_session.flush()
+    track = Track(
+        file_path="/music/album/01-爱在西元前.mp3",
+        title="爱在西元前",
+        artist_id=artist.id,
+        album_id=album.id,
+        duration=200,
+        format="mp3",
+    )
+    db_session.add(track)
+    db_session.commit()
+
+    cover_bytes = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00\x01\x00\x01"
+        b"\x00\x00\xff\xd9"
+    )
+    monkeypatch.setattr(albums_module, "COVERS_DIR", tmp_path / "covers")
+    monkeypatch.setattr(
+        cover_service,
+        "search_album_cover_candidates",
+        lambda *_args, **_kwargs: [
+            cover_service.CoverCandidate(
+                image_url="https://example.test/fantasy.jpg",
+                thumbnail_url="https://example.test/fantasy-thumb.jpg",
+                album_title="范特西",
+                artist_name="周杰伦",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        cover_service,
+        "fetch_cover_image_url",
+        lambda *_args, **_kwargs: cover_bytes,
+    )
+
+    candidates = albums_api.search_album_cover_candidates_api(
+        album.id,
+        body=albums_api.AlbumCoverSearch(title="范特西", artist="周杰伦"),
+        db=db_session,
+    )
+    assert candidates[0]["thumbnail_url"] == "https://example.test/fantasy-thumb.jpg"
+
+    result = albums_api.apply_album_cover(
+        album.id,
+        body=albums_api.AlbumCoverApply(
+            image_url="https://example.test/fantasy.jpg"
+        ),
+        db=db_session,
+    )
+
+    assert result["cover_path"] is not None
+    db_session.refresh(track)
+    assert track.has_cover is True

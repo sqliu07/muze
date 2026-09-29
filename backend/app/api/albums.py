@@ -1,6 +1,7 @@
 """Albums API — 列表、详情。"""
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -11,7 +12,14 @@ from sqlalchemy.orm import Session
 from app.core.config import COVERS_DIR
 from app.core.database import get_db
 from app.models.models import Album, Artist, Track
-from app.schemas.schemas import AlbumDetailOut, AlbumOut, TrackOut
+from app.schemas.schemas import (
+    AlbumDetailOut,
+    AlbumOut,
+    TrackCoverApply as AlbumCoverApply,
+    TrackCoverCandidateOut,
+    TrackCoverSearch as AlbumCoverSearch,
+    TrackOut,
+)
 
 router = APIRouter(prefix="/api/albums", tags=["albums"])
 
@@ -39,7 +47,7 @@ def _album_to_dict(album: Album) -> dict:
 
     artist_dict = None
     if album.artist is not None:
-        artist_dict = ArtistOut.from_orm(album.artist).dict()
+        artist_dict = ArtistOut.model_validate(album.artist).model_dump()
 
     return {
         "id": album.id,
@@ -53,17 +61,24 @@ def _album_to_dict(album: Album) -> dict:
     }
 
 
+def _album_cover_name(album: Album, image_url: str = "") -> str:
+    artist_name = album.artist.name if album.artist else ""
+    key = "\0".join([artist_name, album.title, image_url])
+    cover_hash = hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+    return f"search-{cover_hash}.jpg"
+
+
 def _track_to_dict(track: Track) -> dict:
     """将 Track ORM 对象转为字典。"""
     from app.schemas.schemas import AlbumOut as AlbumOutSchema, ArtistOut
 
     artist_dict = None
     if track.artist is not None:
-        artist_dict = ArtistOut.from_orm(track.artist).dict()
+        artist_dict = ArtistOut.model_validate(track.artist).model_dump()
 
     album_dict = None
     if track.album is not None:
-        album_dict = AlbumOutSchema.from_orm(track.album).dict()
+        album_dict = AlbumOutSchema.model_validate(track.album).model_dump()
 
     return {
         "id": track.id,
@@ -159,3 +174,63 @@ def get_album_cover(album_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="封面文件不存在")
 
     return FileResponse(str(cover_file), media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
+
+
+@router.post("/{album_id}/cover/candidates", response_model=list[TrackCoverCandidateOut])
+def search_album_cover_candidates_api(
+    album_id: int,
+    body: AlbumCoverSearch,
+    db: Session = Depends(get_db),
+):
+    album = db.query(Album).filter_by(id=album_id).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="专辑不存在")
+    if not body.title.strip():
+        raise HTTPException(status_code=422, detail="title 不能为空")
+
+    from app.services.cover_service import search_album_cover_candidates
+
+    candidates = search_album_cover_candidates(
+        body.title,
+        body.artist or (album.artist.name if album.artist else None),
+        body.title,
+        limit=body.limit,
+    )
+    return [
+        {
+            "image_url": c.image_url,
+            "thumbnail_url": c.thumbnail_url,
+            "album_title": c.album_title,
+            "artist_name": c.artist_name,
+            "source": c.source,
+        }
+        for c in candidates
+    ]
+
+
+@router.post("/{album_id}/cover", response_model=AlbumOut)
+def apply_album_cover(
+    album_id: int,
+    body: AlbumCoverApply,
+    db: Session = Depends(get_db),
+):
+    album = db.query(Album).filter_by(id=album_id).first()
+    if not album:
+        raise HTTPException(status_code=404, detail="专辑不存在")
+
+    from app.services.cover_service import fetch_cover_image_url
+
+    image_data = fetch_cover_image_url(body.image_url)
+    if not image_data:
+        raise HTTPException(status_code=404, detail="封面下载失败")
+
+    COVERS_DIR.mkdir(parents=True, exist_ok=True)
+    cover_name = _album_cover_name(album, body.image_url)
+    (COVERS_DIR / cover_name).write_bytes(image_data)
+    album.cover_path = cover_name
+    if album.artist and not album.artist.cover_path:
+        album.artist.cover_path = cover_name
+    db.query(Track).filter(Track.album_id == album.id).update({"has_cover": True})
+    db.commit()
+    db.refresh(album)
+    return _album_to_dict(album)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -11,9 +12,24 @@ from sqlalchemy.orm import Session
 from app.core.config import COVERS_DIR
 from app.core.database import get_db
 from app.models.models import Artist, Favorite, Track
-from app.schemas.schemas import TrackListOut, TrackOut, TrackUpdate
+from app.schemas.schemas import (
+    TrackCoverApply,
+    TrackCoverCandidateOut,
+    TrackCoverSearch,
+    TrackListOut,
+    TrackOut,
+    TrackUpdate,
+)
 
 router = APIRouter(prefix="/api/tracks", tags=["tracks"])
+
+
+def _cover_name_for_track(track: Track, image_url: str = "") -> str:
+    artist_name = track.artist.name if track.artist else ""
+    album_title = track.album.title if track.album else track.title
+    cover_key = "\0".join([artist_name, album_title, image_url])
+    cover_hash = hashlib.md5(cover_key.encode("utf-8")).hexdigest()[:12]
+    return f"search-{cover_hash}.jpg"
 
 
 def _track_to_dict(track: Track, is_favorite: bool) -> dict:
@@ -22,11 +38,11 @@ def _track_to_dict(track: Track, is_favorite: bool) -> dict:
 
     artist_dict = None
     if track.artist is not None:
-        artist_dict = ArtistOut.from_orm(track.artist).dict()
+        artist_dict = ArtistOut.model_validate(track.artist).model_dump()
 
     album_dict = None
     if track.album is not None:
-        album_dict = AlbumOut.from_orm(track.album).dict()
+        album_dict = AlbumOut.model_validate(track.album).model_dump()
 
     return {
         "id": track.id,
@@ -201,6 +217,111 @@ def get_track_cover(track_id: int, db: Session = Depends(get_db)):
                 )
 
     raise HTTPException(status_code=404, detail="封面不存在")
+
+
+@router.post("/{track_id}/cover/search", response_model=TrackOut)
+def search_track_cover(track_id: int, db: Session = Depends(get_db)):
+    """联网搜索当前曲目的专辑封面并写入元数据。"""
+    track = db.query(Track).filter_by(id=track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="曲目不存在")
+    if not track.album:
+        raise HTTPException(status_code=400, detail="曲目缺少专辑信息，无法写入封面")
+
+    album_title = track.album.title if track.album else None
+    artist_name = track.artist.name if track.artist else None
+    try:
+        from app.services.cover_service import fetch_album_cover
+
+        image_data = fetch_album_cover(album_title, artist_name, track.title)
+    except Exception:
+        image_data = None
+
+    if not image_data:
+        raise HTTPException(status_code=404, detail="未找到可用封面")
+
+    return _apply_cover_bytes(db, track, image_data, _cover_name_for_track(track))
+
+
+@router.post("/{track_id}/cover/candidates", response_model=list[TrackCoverCandidateOut])
+def search_track_cover_candidates(
+    track_id: int,
+    body: TrackCoverSearch,
+    db: Session = Depends(get_db),
+):
+    """按指定 title/artist 返回可选封面候选。"""
+    track = db.query(Track).filter_by(id=track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="曲目不存在")
+    if not body.title.strip():
+        raise HTTPException(status_code=422, detail="title 不能为空")
+
+    from app.services.cover_service import search_album_cover_candidates
+
+    candidates = search_album_cover_candidates(
+        body.title,
+        body.artist,
+        body.title,
+        limit=body.limit,
+    )
+    return [
+        {
+            "image_url": c.image_url,
+            "thumbnail_url": c.thumbnail_url,
+            "album_title": c.album_title,
+            "artist_name": c.artist_name,
+            "source": c.source,
+        }
+        for c in candidates
+    ]
+
+
+@router.post("/{track_id}/cover", response_model=TrackOut)
+def apply_track_cover(
+    track_id: int,
+    body: TrackCoverApply,
+    db: Session = Depends(get_db),
+):
+    """应用用户选择的封面候选。"""
+    track = db.query(Track).filter_by(id=track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="曲目不存在")
+    if not track.album:
+        raise HTTPException(status_code=400, detail="曲目缺少专辑信息，无法写入封面")
+
+    from app.services.cover_service import fetch_cover_image_url
+
+    image_data = fetch_cover_image_url(body.image_url)
+    if not image_data:
+        raise HTTPException(status_code=404, detail="封面下载失败")
+
+    return _apply_cover_bytes(
+        db,
+        track,
+        image_data,
+        _cover_name_for_track(track, body.image_url),
+    )
+
+
+def _apply_cover_bytes(
+    db: Session,
+    track: Track,
+    image_data: bytes,
+    cover_name: str,
+) -> dict:
+    COVERS_DIR.mkdir(parents=True, exist_ok=True)
+    (COVERS_DIR / cover_name).write_bytes(image_data)
+    if track.album:
+        track.album.cover_path = cover_name
+    if track.artist and not track.artist.cover_path:
+        track.artist.cover_path = cover_name
+    track.has_cover = True
+
+    db.commit()
+    db.refresh(track)
+
+    is_favorite = db.query(Favorite).filter_by(track_id=track.id).first() is not None
+    return _track_to_dict(track, is_favorite)
 
 
 @router.patch("/{track_id}", response_model=TrackOut)

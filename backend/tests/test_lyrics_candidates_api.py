@@ -23,7 +23,7 @@ def test_search_track_lyrics_lddc_candidates(db_session, monkeypatch):
     monkeypatch.setattr(
         lyrics_api,
         "search_lddc_candidates",
-        lambda _title, _artist=None, limit=8: [
+        lambda _title, _artist=None, limit=8, duration_seconds=None: [
             LDDCCandidate(
                 content="[00:01.00]威[00:01.30]廉",
                 source="lddc:ne",
@@ -49,4 +49,3 @@ def test_search_track_lyrics_lddc_candidates(db_session, monkeypatch):
     assert results[0]["source"] == "lddc:ne"
     assert results[0]["word_level"] is True
     assert "威" in results[0]["preview"]
-

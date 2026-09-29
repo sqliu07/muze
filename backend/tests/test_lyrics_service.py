@@ -40,7 +40,7 @@ def test_search_online_lyrics_prefers_lddc_even_when_non_word(monkeypatch):
     monkeypatch.setattr(
         lyrics_service,
         "search_lddc_word_lyrics",
-        lambda _title, _artist=None: LyricsResult(
+        lambda _title, _artist=None, _duration=None: LyricsResult(
             content="[00:01.00]第一句",
             source="lddc:ne",
             synced=True,
@@ -49,7 +49,7 @@ def test_search_online_lyrics_prefers_lddc_even_when_non_word(monkeypatch):
     monkeypatch.setattr(
         lyrics_service,
         "search_lrclib",
-        lambda _title, _artist=None: LyricsResult(
+        lambda _title, _artist=None, _duration=None: LyricsResult(
             content="[00:02.00]lrclib",
             source="lrclib",
             synced=True,
@@ -68,7 +68,7 @@ def test_search_online_lyrics_fallback_when_require_word_level(monkeypatch):
     monkeypatch.setattr(
         lyrics_service,
         "search_lddc_word_lyrics",
-        lambda _title, _artist=None: LyricsResult(
+        lambda _title, _artist=None, _duration=None: LyricsResult(
             content="[00:01.00]第一句",
             source="lddc:ne",
             synced=True,
@@ -77,7 +77,7 @@ def test_search_online_lyrics_fallback_when_require_word_level(monkeypatch):
     monkeypatch.setattr(
         lyrics_service,
         "search_lrclib",
-        lambda _title, _artist=None: LyricsResult(
+        lambda _title, _artist=None, _duration=None: LyricsResult(
             content="[00:02.00]lrclib",
             source="lrclib",
             synced=True,
@@ -89,6 +89,54 @@ def test_search_online_lyrics_fallback_when_require_word_level(monkeypatch):
     result = lyrics_service.search_online_lyrics("测试歌", "测试歌手")
     assert result is not None
     assert result.source == "lrclib"
+
+
+def test_chinese_lyrics_do_not_keep_source_translation():
+    """中文原歌词不应保留来源返回的翻译字段，避免中文歌显示翻译。"""
+    cleaned = lyrics_service._translated_content_for_source(
+        "[00:01.00]娘子\n[00:02.00]她人在江南等我",
+        "[00:01.00]Lady\n[00:02.00]She waits for me",
+    )
+
+    assert cleaned is None
+
+
+def test_candidate_score_penalizes_collapsed_word_timing():
+    malformed = (
+        "[00:34.800]缤[00:34.980]纷[00:35.170]星[00:35.400]空"
+        "[00:35.580]抛[00:35.830]低[00:35.990]我[00:36.220]寄"
+        "[00:36.450]存[00:38.280]繁[00:38.340]荣[00:39.860]垃"
+        "[00:39.920]圾[00:39.980]缸[00:40.040]"
+    )
+    coherent = (
+        "[00:34.960]缤[00:35.180]纷[00:35.380]星[00:35.580]空"
+        "[00:35.770]抛[00:35.980]低[00:36.200]我[00:36.420]寄"
+        "[00:36.620]存[00:36.840]繁[00:37.220]荣[00:37.600]垃"
+        "[00:37.890]圾[00:38.290]缸[00:40.060]"
+    )
+
+    assert lyrics_service._word_timing_anomaly_count(malformed) == 3
+    assert lyrics_service._word_timing_anomaly_count(coherent) == 0
+    assert lyrics_service._score_candidate(
+        "七百年后", "陈奕迅", "七百年後", "陈奕迅", "lddc:ne", malformed, 262_000, 262.36,
+    ) < lyrics_service._score_candidate(
+        "七百年后", "陈奕迅", "七百年後", "陈奕迅", "lddc:qm", coherent, 262_000, 262.36,
+    )
+    assert lyrics_service._score_candidate(
+        "七百年后", "陈奕迅", "七百年後", "陈奕迅", "lddc:qm", coherent, 262_000, 262.36,
+    ) > lyrics_service._score_candidate(
+        "七百年后 (Live)", "陈奕迅", "七百年後", "陈奕迅", "lddc:qm", coherent, 274_000, 262.36,
+    )
+
+
+def test_lddc_tuple_artist_and_duration_metadata_are_extracted():
+    class Song:
+        title = "七百年后"
+        artist = ("陈奕迅",)
+        duration = 262_000
+
+    assert lyrics_service._extract_song_meta(Song()) == ("七百年后", "陈奕迅")
+    assert lyrics_service._extract_song_duration_ms(Song()) == 262_000
 
 
 def test_collect_lddc_results_continues_when_first_source_fails(monkeypatch, tmp_path: Path):
