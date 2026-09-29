@@ -1,12 +1,16 @@
 import { useNavigate } from 'react-router-dom'
+import { Search } from 'lucide-react'
 import { getAlbumCoverUrl } from '@/api/client'
 import type { AlbumOut } from '@/types/api'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface AlbumCardProps {
   album: AlbumOut
+  onSearchCover?: (album: AlbumOut) => void
 }
 
-export default function AlbumCard({ album }: AlbumCardProps) {
+export default function AlbumCard({ album, onSearchCover }: AlbumCardProps) {
   const navigate = useNavigate()
 
   return (
@@ -25,6 +29,26 @@ export default function AlbumCard({ album }: AlbumCardProps) {
           <div className="flex h-full w-full items-center justify-center text-4xl text-muted-foreground">
             ♪
           </div>
+        )}
+        {onSearchCover && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onSearchCover(album)
+                }}
+                className="absolute right-2 top-2 h-8 w-8 bg-background/85 opacity-0 shadow-sm backdrop-blur transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{album.cover_path ? '搜索封面' : '补封面'}</p>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
       <div>

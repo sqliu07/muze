@@ -2,6 +2,9 @@ import axios from 'axios'
 import type {
   TrackOut,
   TrackListOut,
+  TrackCoverApply,
+  TrackCoverCandidate,
+  TrackCoverSearch,
   TrackUpdate,
   TracksParams,
   AlbumOut,
@@ -44,12 +47,37 @@ export async function updateTrack(id: number, payload: TrackUpdate): Promise<Tra
   return data
 }
 
+export async function searchTrackCover(id: number): Promise<TrackOut> {
+  const { data } = await api.post<TrackOut>(`/tracks/${id}/cover/search`)
+  return data
+}
+
+export async function searchTrackCoverCandidates(
+  id: number,
+  payload: TrackCoverSearch
+): Promise<TrackCoverCandidate[]> {
+  const { data } = await api.post<TrackCoverCandidate[]>(
+    `/tracks/${id}/cover/candidates`,
+    payload
+  )
+  return data
+}
+
+export async function applyTrackCover(
+  id: number,
+  payload: TrackCoverApply
+): Promise<TrackOut> {
+  const { data } = await api.post<TrackOut>(`/tracks/${id}/cover`, payload)
+  return data
+}
+
 export function getTrackStreamUrl(id: number): string {
   return `${api.defaults.baseURL}/tracks/${id}/stream`
 }
 
-export function getTrackCoverUrl(id: number): string {
-  return `${api.defaults.baseURL}/tracks/${id}/cover`
+export function getTrackCoverUrl(id: number, revision?: string | null): string {
+  const url = `${api.defaults.baseURL}/tracks/${id}/cover`
+  return revision ? `${url}?v=${encodeURIComponent(revision)}` : url
 }
 
 export function getAlbumCoverUrl(id: number): string {
@@ -69,6 +97,25 @@ export async function getAlbums(params?: AlbumsParams): Promise<AlbumOut[]> {
 
 export async function getAlbum(id: number): Promise<AlbumOut> {
   const { data } = await api.get<AlbumOut>(`/albums/${id}`)
+  return data
+}
+
+export async function searchAlbumCoverCandidates(
+  id: number,
+  payload: TrackCoverSearch
+): Promise<TrackCoverCandidate[]> {
+  const { data } = await api.post<TrackCoverCandidate[]>(
+    `/albums/${id}/cover/candidates`,
+    payload
+  )
+  return data
+}
+
+export async function applyAlbumCover(
+  id: number,
+  payload: TrackCoverApply
+): Promise<AlbumOut> {
+  const { data } = await api.post<AlbumOut>(`/albums/${id}/cover`, payload)
   return data
 }
 
@@ -172,6 +219,11 @@ export async function saveLyrics(trackId: number, payload: LyricsUpdate): Promis
 
 export async function restoreLyrics(trackId: number): Promise<LyricsOut> {
   const { data } = await api.post<LyricsOut>(`/lyrics/${trackId}/restore`)
+  return data
+}
+
+export async function updateLyricsOffset(trackId: number, offsetMs: number): Promise<LyricsOut> {
+  const { data } = await api.put<LyricsOut>(`/lyrics/${trackId}/offset`, { offset_ms: offsetMs })
   return data
 }
 
@@ -299,8 +351,16 @@ export async function fetchArtistImage(artistId: number): Promise<{ status: stri
 
 export interface AppSettings {
   deepseek_api_key: string
+  deepseek_configured: boolean
+  deepseek_model: string
   translate_source: string
   translate_target: string
+}
+
+export interface DeepSeekTestResult {
+  ok: boolean
+  code: string
+  message: string
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -310,5 +370,10 @@ export async function getSettings(): Promise<AppSettings> {
 
 export async function updateSettings(payload: Partial<AppSettings>): Promise<AppSettings> {
   const { data } = await api.put<AppSettings>('/settings', payload)
+  return data
+}
+
+export async function testDeepSeekConnection(): Promise<DeepSeekTestResult> {
+  const { data } = await api.post<DeepSeekTestResult>('/settings/deepseek/test')
   return data
 }

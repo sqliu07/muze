@@ -46,7 +46,7 @@ export default function TrackRow({ track, index, isActive, onPlay }: TrackRowPro
       {/* 封面缩略图 */}
       {track.album?.cover_path ? (
         <img
-          src={getTrackCoverUrl(track.id)}
+          src={getTrackCoverUrl(track.id, track.album?.cover_path)}
           alt={track.title}
           className="h-10 w-10 rounded object-cover shrink-0"
         />

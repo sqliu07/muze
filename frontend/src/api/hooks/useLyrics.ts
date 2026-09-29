@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getLyrics, searchLyrics, saveLyrics, restoreLyrics, searchLddcCandidates, translateLyrics } from '@/api/client'
-import type { LyricsSearch, LyricsUpdate } from '@/types/api'
+import { getLyrics, searchLyrics, saveLyrics, restoreLyrics, searchLddcCandidates, translateLyrics, updateLyricsOffset } from '@/api/client'
+import type { LyricsOut, LyricsSearch, LyricsUpdate } from '@/types/api'
 import type { SearchLyricsOptions } from '@/api/client'
 
 export function useLyrics(trackId: number) {
@@ -45,6 +45,31 @@ export function useRestoreLyrics() {
   return useMutation({
     mutationFn: (trackId: number) => restoreLyrics(trackId),
     onSuccess: (data, trackId) => {
+      queryClient.setQueryData(['lyrics', trackId], data)
+    },
+  })
+}
+
+export function useUpdateLyricsOffset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ trackId, offsetMs }: { trackId: number; offsetMs: number }) =>
+      updateLyricsOffset(trackId, offsetMs),
+    onMutate: async ({ trackId, offsetMs }) => {
+      const queryKey = ['lyrics', trackId]
+      await queryClient.cancelQueries({ queryKey })
+      const previous = queryClient.getQueryData<LyricsOut>(queryKey)
+      if (previous) {
+        queryClient.setQueryData(queryKey, { ...previous, offset_ms: offsetMs })
+      }
+      return { previous }
+    },
+    onError: (_error, { trackId }, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['lyrics', trackId], context.previous)
+      }
+    },
+    onSuccess: (data, { trackId }) => {
       queryClient.setQueryData(['lyrics', trackId], data)
     },
   })

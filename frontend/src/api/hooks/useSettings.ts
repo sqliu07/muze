@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getSettings, updateSettings, type AppSettings } from '@/api/client'
+import {
+  getSettings,
+  testDeepSeekConnection,
+  updateSettings,
+  type AppSettings,
+} from '@/api/client'
 
 export function useSettings() {
   return useQuery({
@@ -16,4 +21,8 @@ export function useUpdateSettings() {
       queryClient.invalidateQueries({ queryKey: ['settings'] })
     },
   })
+}
+
+export function useTestDeepSeekConnection() {
+  return useMutation({ mutationFn: testDeepSeekConnection })
 }

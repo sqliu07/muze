@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "node --test src/store/playerStore.equalizer.test.ts src/lib/spectrum.test.ts src/lib/backgroundDebug.test.ts src/lib/rhythm.test.ts src/lib/lyricAnimation.test.ts src/lib/interludeAnimation.test.ts src/lib/lrcParser.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,7 +22,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.99.0",
-    "axios": "^1.15.0",
+    "axios": "^1.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "colorthief": "^3.3.1",
@@ -29,14 +30,13 @@
     "lucide-react": "^1.8.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.14.1",
+    "react-router-dom": "^7.18.4",
     "tailwind-merge": "^3.5.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
     "@tailwindcss/line-clamp": "^0.4.4",
-    "@types/colorthief": "^2.6.1",
     "@types/node": "^25.6.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
@@ -46,11 +46,11 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.28",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.30.1",
-    "vite": "^6.3.5"
+    "vite": "^6.4.3"
   }
 }

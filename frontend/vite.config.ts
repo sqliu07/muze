@@ -9,6 +9,16 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom/client', 'react-router-dom'],
+          motion: ['framer-motion'],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {

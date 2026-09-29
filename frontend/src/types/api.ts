@@ -58,12 +58,33 @@ export interface TrackUpdate {
   genre?: string
 }
 
+export interface TrackCoverSearch {
+  title: string
+  artist?: string
+  limit?: number
+}
+
+export interface TrackCoverCandidate {
+  image_url: string
+  thumbnail_url: string
+  album_title: string
+  artist_name: string
+  source: string
+}
+
+export interface TrackCoverApply {
+  image_url: string
+  album_title?: string
+  artist_name?: string
+}
+
 export interface LyricsOut {
   id: number
   track_id: number
   source: string | null
   content: string | null
   synced: boolean
+  offset_ms: number
   translated_content: string | null
   updated_at: string
   original_content: string | null
@@ -91,6 +112,7 @@ export interface LyricsCandidate {
   translated_content: string | null
   song_title: string
   song_artist: string
+  duration_seconds: number | null
 }
 
 export interface PlaylistCreate {
