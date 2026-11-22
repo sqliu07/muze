@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -100,7 +101,16 @@ app = FastAPI(title="Muze API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5175",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+        "https://localhost",
+        "http://localhost",
+        *[origin.strip() for origin in os.getenv("MUZE_ALLOWED_ORIGINS", "").split(",") if origin.strip()],
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
