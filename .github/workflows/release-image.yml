@@ -134,6 +134,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ needs.prepare.outputs.release_name }}
+          prerelease: ${{ contains(github.ref_name, '-alpha.') }}
           generate_release_notes: true
           files: |
             ${{ needs.prepare.outputs.image_tar_name }}
