@@ -21,7 +21,7 @@ export default function AlbumCard({ album, onSearchCover }: AlbumCardProps) {
       <div className="relative aspect-square overflow-hidden rounded-lg bg-muted">
         {album.cover_path ? (
           <img
-            src={getAlbumCoverUrl(album.id)}
+            src={album.source_id === "local:android" ? album.cover_url ?? undefined : getAlbumCoverUrl(album.id, album.source_id)}
             alt={album.title}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
@@ -40,7 +40,8 @@ export default function AlbumCard({ album, onSearchCover }: AlbumCardProps) {
                   event.stopPropagation()
                   onSearchCover(album)
                 }}
-                className="absolute right-2 top-2 h-8 w-8 bg-background/85 opacity-0 shadow-sm backdrop-blur transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                aria-label={`${album.cover_path ? '搜索' : '补全'} ${album.title} 的封面`}
+                className="absolute right-2 top-2 h-11 w-11 bg-background/85 shadow-sm backdrop-blur transition-opacity md:h-8 md:w-8 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
               >
                 <Search className="h-4 w-4" />
               </Button>

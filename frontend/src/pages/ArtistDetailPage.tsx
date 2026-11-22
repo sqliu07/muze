@@ -34,7 +34,7 @@ export default function ArtistDetailPage() {
           <div className="shrink-0 w-32 h-32 rounded-full overflow-hidden bg-muted flex items-center justify-center text-5xl">
             {artist.cover_path ? (
               <img
-                src={getArtistCoverUrl(artist.id)}
+                src={artist.cover_url || getArtistCoverUrl(artist.id, artist.source_id)}
                 alt={artist.name}
                 className="h-full w-full object-cover"
               />

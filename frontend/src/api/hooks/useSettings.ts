@@ -5,18 +5,21 @@ import {
   updateSettings,
   type AppSettings,
 } from '@/api/client'
+import { useLibrarySource } from '@/platform/useLibrarySource'
 
 export function useSettings() {
+  const source = useLibrarySource()
   return useQuery({
-    queryKey: ['settings'],
-    queryFn: getSettings,
+    queryKey: ['settings', source.id],
+    queryFn: () => getSettings(source.id),
   })
 }
 
 export function useUpdateSettings() {
   const queryClient = useQueryClient()
+  const source = useLibrarySource()
   return useMutation({
-    mutationFn: (payload: Partial<AppSettings>) => updateSettings(payload),
+    mutationFn: (payload: Partial<AppSettings>) => updateSettings(payload, source.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] })
     },
@@ -24,5 +27,6 @@ export function useUpdateSettings() {
 }
 
 export function useTestDeepSeekConnection() {
-  return useMutation({ mutationFn: testDeepSeekConnection })
+  const source = useLibrarySource()
+  return useMutation({ mutationFn: () => testDeepSeekConnection(source.id) })
 }

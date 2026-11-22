@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useState, useReducer, useRef, useCallback, useEffect } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { SpectrumVisualizer } from "./SpectrumVisualizer"
 import ArtworkBackdrop from "./ArtworkBackdrop"
@@ -11,6 +11,11 @@ import {
   SkipForward,
   Heart,
   MoreHorizontal,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  ListMusic,
+  X,
 } from "lucide-react"
 import { usePlayerStore, currentTrackSelector } from "@/store/playerStore"
 import { useUIStore } from "@/store/uiStore"
@@ -32,6 +37,12 @@ import { useColorThief } from "@/hooks/useColorThief"
 import CoverArt from "./CoverArt"
 import LyricsView from "./LyricsView"
 import { formatDuration } from "@/lib/utils"
+import { EqualizerControl } from "@/components/player/EqualizerControl"
+import { getPlaybackCapabilities } from "@/platform/playback/runtime"
+import { useLibrarySource } from "@/platform/useLibrarySource"
+import { trackIdentity } from '@/platform/library'
+import { isPlayerDismissSwipe, type SwipePoint } from '@/platform/navigation/mobileBack'
+import { canHandlePlayerShortcut, createNowPlayingView, nowPlayingViewReducer } from '@/platform/navigation/nowPlayingView'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,8 +113,20 @@ function SeekBar({ duration, className }: SeekBarProps) {
   return (
     <div className={className}>
       <div
-        className="relative w-full cursor-pointer rounded-full py-2"
+        role="slider"
+        aria-label="播放进度"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={Math.round(currentTime)}
+        tabIndex={0}
+        className="relative flex h-11 w-full touch-none cursor-pointer items-center rounded-full md:h-auto md:py-2"
         onPointerDown={onPointerDown}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+          event.preventDefault()
+          event.stopPropagation()
+          seekAudio(Math.max(0, Math.min(duration, currentTime + (event.key === "ArrowRight" ? 5 : -5))))
+        }}
       >
         <div className={`h-1 w-full rounded-full bg-white/20 transition-all ${dragging ? "!h-1.5" : ""}`}>
           <div
@@ -129,14 +152,31 @@ function NowPlayingPage() {
   const setNowPlayingOpen = useUIStore((s) => s.setNowPlayingOpen)
   const currentTrack = usePlayerStore(currentTrackSelector)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
+  const playbackError = usePlayerStore((s) => s.playbackError)
   const setPlaying = usePlayerStore((s) => s.setPlaying)
   const playNext = usePlayerStore((s) => s.playNext)
   const playPrev = usePlayerStore((s) => s.playPrev)
   const toggleCurrentTrackFavorite = usePlayerStore((s) => s.toggleCurrentTrackFavorite)
+  const queue = usePlayerStore((s) => s.queue)
+  const currentQueueIndex = usePlayerStore((s) => s.currentIndex)
+  const setQueue = usePlayerStore((s) => s.setQueue)
+  const removeFromQueue = usePlayerStore((s) => s.removeFromQueue)
+  const playMode = usePlayerStore((s) => s.playMode)
+  const cyclePlayMode = usePlayerStore((s) => s.cyclePlayMode)
+  const playbackCapabilities = getPlaybackCapabilities()
+  const librarySource = useLibrarySource()
+  const currentTrackSource = currentTrack?.source_id ?? "remote:same-origin"
+  const canAddToSelectedPlaylist = currentTrackSource === librarySource.id
   const duration = currentTrack?.duration ?? 0
 
-  const [lyricsVisible, setLyricsVisible] = useState(true)
+  const [{ lyricsVisible, queueOpen }, updateView] = useReducer(
+    nowPlayingViewReducer,
+    window.matchMedia('(max-width: 767px)').matches,
+    createNowPlayingView,
+  )
   const [spectrumVisible, setSpectrumVisible] = useState(false)
+  const queueTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const headerSwipeStart = useRef<SwipePoint | null>(null)
   const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false)
   const [searchChoiceDialogOpen, setSearchChoiceDialogOpen] = useState(false)
   const [searchChoiceDetail, setSearchChoiceDetail] = useState<{
@@ -160,9 +200,22 @@ function NowPlayingPage() {
   const [coverCandidatesOpen, setCoverCandidatesOpen] = useState(false)
   const [coverCandidates, setCoverCandidates] = useState<TrackCoverCandidate[]>([])
   const [coverCandidatesLoading, setCoverCandidatesLoading] = useState(false)
+  const currentIdentity = currentTrack ? trackIdentity(currentTrack) : ''
+  const currentIdentityRef = useRef(currentIdentity)
+  currentIdentityRef.current = currentIdentity
+  useEffect(() => {
+    setCandidatesOpen(false)
+    setCoverCandidatesOpen(false)
+    setCustomSearchOpen(false)
+    setCoverSearchOpen(false)
+    setSearchChoiceDialogOpen(false)
+    setManualLyricsOpen(false)
+    setCandidates([])
+    setCoverCandidates([])
+  }, [currentIdentity])
   const searchLddcMutation = useSearchLddcCandidates()
 
-  const { data: lyrics } = useLyrics(currentTrack?.id ?? 0)
+  const { data: lyrics } = useLyrics(currentTrack?.id ?? 0, currentTrack?.source_id)
   const { data: playlists } = usePlaylists()
   const searchLyricsMutation = useSearchLyrics()
   const searchTrackCoverMutation = useSearchTrackCover()
@@ -177,7 +230,9 @@ function NowPlayingPage() {
   const [manualLyricsText, setManualLyricsText] = useState("")
 
   const coverUrl = currentTrack?.has_cover
-    ? getTrackCoverUrl(currentTrack.id, currentTrack.album?.cover_path)
+    ? currentTrack.source_id === "local:android"
+      ? currentTrack.cover_url ?? null
+      : getTrackCoverUrl(currentTrack.id, currentTrack.album?.cover_path, currentTrack.source_id)
     : null
   const colors = useColorThief(coverUrl)
 
@@ -186,7 +241,12 @@ function NowPlayingPage() {
     !["embedded", "lrc", "manual"].includes(lyrics.source)
   )
 
-  const toggleLyrics = () => setLyricsVisible((v) => !v)
+  const toggleLyrics = () => updateView({ type: 'toggle-lyrics' })
+  const setQueueOpen = (open: boolean) => updateView({ type: 'queue-open-changed', open })
+
+  useEffect(() => {
+    if (!nowPlayingOpen) updateView({ type: 'queue-open-changed', open: false })
+  }, [nowPlayingOpen])
 
   const setTransientFeedback = useCallback((message: string, timeoutMs = 2600) => {
     setSearchFeedback(message)
@@ -213,14 +273,15 @@ function NowPlayingPage() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
-      const isTyping = !!target && (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      )
-      if (isTyping) return
+      if (!canHandlePlayerShortcut(target, e.defaultPrevented)) return
+
+      if (e.key === "Escape" && nowPlayingOpen) {
+        setNowPlayingOpen(false)
+        return
+      }
 
       if (e.code === "Space") {
+        if (target?.closest("button, a, [role='menuitem'], [role='slider']")) return
         e.preventDefault()
         setPlaying(!isPlaying)
         return
@@ -243,7 +304,7 @@ function NowPlayingPage() {
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [currentTrack, isPlaying, setPlaying])
+  }, [currentTrack, isPlaying, setPlaying, nowPlayingOpen, setNowPlayingOpen])
 
   const searchOnlineLyrics = useCallback((options?: { refresh?: boolean; allowUnsynced?: boolean }) => {
     if (!currentTrack) return
@@ -251,17 +312,20 @@ function NowPlayingPage() {
     searchLyricsMutation
       .mutateAsync({
         trackId: currentTrack.id,
+        sourceId: currentTrack.source_id,
         payload: {
           title: currentTrack.title,
           artist: currentTrack.artist?.name,
         },
         options,
       })
-      .then(() => {
+      .then((result) => {
+        if (currentIdentityRef.current !== trackIdentity(currentTrack)) return
         setSearchChoiceDialogOpen(false)
-        setTransientFeedback("已应用逐字歌词")
+        setTransientFeedback(result.synced ? "已应用同步歌词" : "已应用歌词")
       })
       .catch((err: unknown) => {
+        if (currentIdentityRef.current !== trackIdentity(currentTrack)) return
         const msg =
           (err as { response?: { status?: number; data?: { detail?: { message?: string; source?: string; synced?: boolean; preview?: string } | string } } })
             ?.response?.data?.detail
@@ -293,7 +357,7 @@ function NowPlayingPage() {
   const restoreOriginal = useCallback(async () => {
     if (!currentTrack) return
     try {
-      await restoreLyricsMutation.mutateAsync(currentTrack.id)
+      await restoreLyricsMutation.mutateAsync({ trackId: currentTrack.id, sourceId: currentTrack.source_id })
       setTransientFeedback("已恢复原始歌词")
     } catch {
       setTransientFeedback("没有可恢复的原始歌词")
@@ -304,7 +368,7 @@ function NowPlayingPage() {
     if (!currentTrack) return
     setTransientFeedback("正在联网搜索封面...", 0)
     try {
-      const updatedTrack = await searchTrackCoverMutation.mutateAsync(currentTrack.id)
+      const updatedTrack = await searchTrackCoverMutation.mutateAsync({ id: currentTrack.id, sourceId: currentTrack.source_id })
       usePlayerStore.getState().replaceQueuedTrack(updatedTrack)
       setTransientFeedback("已更新封面")
     } catch (err: unknown) {
@@ -323,12 +387,14 @@ function NowPlayingPage() {
     try {
       const result = await searchTrackCoverCandidatesMutation.mutateAsync({
         id: currentTrack.id,
+        sourceId: currentTrack.source_id,
         payload: {
           title: coverTitle.trim(),
           artist: coverArtist.trim() || undefined,
           limit: 8,
         },
       })
+      if (currentIdentityRef.current !== trackIdentity(currentTrack)) return
       if (result.length === 0) {
         setTransientFeedback("未找到封面候选，请换个关键词试试")
         return
@@ -356,6 +422,7 @@ function NowPlayingPage() {
     try {
       const updatedTrack = await applyTrackCoverMutation.mutateAsync({
         id: currentTrack.id,
+        sourceId: currentTrack.source_id,
         payload: {
           image_url: candidate.image_url,
           album_title: candidate.album_title,
@@ -374,6 +441,7 @@ function NowPlayingPage() {
     try {
       await saveLyricsMutation.mutateAsync({
         trackId: currentTrack.id,
+        sourceId: currentTrack.source_id,
         payload: { content: manualLyricsText.trim() },
       })
       setManualLyricsOpen(false)
@@ -396,6 +464,7 @@ function NowPlayingPage() {
     try {
       await updateLyricsOffsetMutation.mutateAsync({
         trackId: currentTrack.id,
+        sourceId: currentTrack.source_id,
         offsetMs: nextOffset,
       })
       const seconds = Math.abs(nextOffset) / 1000
@@ -411,6 +480,10 @@ function NowPlayingPage() {
 
   const addCurrentTrackToPlaylist = useCallback(async (playlistId: number) => {
     if (!currentTrack) return
+    if (!canAddToSelectedPlaylist) {
+      setTransientFeedback("请切换到这首歌曲所属的音乐源后再添加歌单")
+      return
+    }
     try {
       await addTracksToPlaylist.mutateAsync({
         id: playlistId,
@@ -430,18 +503,18 @@ function NowPlayingPage() {
         setTransientFeedback("添加失败，请稍后重试。")
       }
     }
-  }, [addTracksToPlaylist, currentTrack, setTransientFeedback])
+  }, [addTracksToPlaylist, currentTrack, setTransientFeedback, canAddToSelectedPlaylist])
 
   const MoreActions = (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <button className="text-white/70 transition-colors hover:text-white">
+        <button aria-label="更多歌曲操作" className="flex h-11 w-11 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white md:h-auto md:w-auto">
           <MoreHorizontal className="h-5 w-5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="min-w-[12rem] border-white/15 bg-black/60 text-white backdrop-blur-md"
+        className="nowplaying-actions max-h-[70dvh] min-w-[12rem] overflow-y-auto border-white/15 bg-black/60 text-white backdrop-blur-md"
       >
         <DropdownMenuItem
           onSelect={(e) => e.preventDefault()}
@@ -456,7 +529,6 @@ function NowPlayingPage() {
               : "联网搜词"}
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={(e) => e.preventDefault()}
           onClick={() => {
             setCustomTitle(currentTrack?.title ?? "")
             setCustomArtist(currentTrack?.artist?.name ?? "")
@@ -478,7 +550,6 @@ function NowPlayingPage() {
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
-          onSelect={(e) => e.preventDefault()}
           onClick={() => setManualLyricsOpen(true)}
           className="focus:bg-white/10 focus:text-white"
         >
@@ -529,7 +600,6 @@ function NowPlayingPage() {
               : "搜索封面"}
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={(e) => e.preventDefault()}
           onClick={() => {
             setCoverTitle(currentTrack?.album?.title || currentTrack?.title || "")
             setCoverArtist(currentTrack?.artist?.name ?? "")
@@ -542,15 +612,31 @@ function NowPlayingPage() {
         </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
-          onSelect={(e) => e.preventDefault()}
           onClick={() => setPlaylistDialogOpen(true)}
-          disabled={!currentTrack}
+          disabled={!currentTrack || !canAddToSelectedPlaylist}
           className="focus:bg-white/10 focus:text-white"
         >
           添加到播放列表
         </DropdownMenuItem>
+        {!canAddToSelectedPlaylist && <p className="max-w-56 px-3 py-2 text-xs text-white/50">切换到歌曲所属的音乐源后可添加歌单</p>}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+
+  const QueueButton = (
+    <button
+      aria-label="待播列表"
+      aria-haspopup="dialog"
+      aria-expanded={queueOpen}
+      aria-controls="player-queue-dialog"
+      onClick={(event) => {
+        queueTriggerRef.current = event.currentTarget
+        setQueueOpen(true)
+      }}
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+    >
+      <ListMusic className="h-5 w-5" />
+    </button>
   )
 
   return (
@@ -562,7 +648,10 @@ function NowPlayingPage() {
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="fixed inset-0 z-50 flex flex-col overflow-hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="正在播放"
+          className="nowplaying-page fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden"
         >
           <ArtworkBackdrop
             colors={colors}
@@ -570,29 +659,43 @@ function NowPlayingPage() {
           />
           <BackgroundDebugPanel />
           {/* 顶部栏 */}
-          <div className="relative z-10 flex items-center px-4 py-3">
+          <div
+            className="nowplaying-header relative z-10 flex shrink-0 touch-pan-x items-center px-3 py-2 md:px-4 md:py-3"
+            onPointerDown={(event) => {
+              if (event.pointerType !== 'touch' || window.matchMedia('(min-width: 768px)').matches || (event.target as HTMLElement).closest('button, input, a')) return
+              headerSwipeStart.current = { x: event.clientX, y: event.clientY }
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }}
+            onPointerUp={(event) => {
+              const start = headerSwipeStart.current
+              headerSwipeStart.current = null
+              if (start && isPlayerDismissSwipe(start, { x: event.clientX, y: event.clientY })) setNowPlayingOpen(false)
+            }}
+            onPointerCancel={() => { headerSwipeStart.current = null }}
+          >
             <button
               onClick={() => setNowPlayingOpen(false)}
-              className="rounded-full p-2 hover:bg-white/10"
+              aria-label="收起播放器"
+              className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-white/10"
             >
               <ChevronDown className="h-6 w-6 text-white" />
             </button>
-            <div className="flex-1 text-center">
+            <div className="min-w-0 flex-1 text-center">
               <p className="text-sm font-medium text-white/50">正在播放</p>
-              <p className="mt-0.5 text-[11px] text-white/65">
-                {searchLyricsMutation.isPending ? "正在联网搜词..." : (searchFeedback ?? "\u00A0")}
+              <p role={playbackError ? "alert" : undefined} className="mt-0.5 line-clamp-2 text-[11px] text-white/65">
+                {playbackError ?? (searchLyricsMutation.isPending ? "正在联网搜词..." : (searchFeedback ?? "\u00A0"))}
               </p>
             </div>
-            <div className="h-6 w-6" />
+            <div className="h-11 w-11 shrink-0" />
           </div>
 
           {/* 主内容 */}
-          <div className="relative z-10 flex flex-1 overflow-hidden px-4 pb-2">
+          <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden px-3 pb-2 md:px-4">
             {/* 桌面端布局 */}
             <div className="hidden w-full md:flex">
               {/* 左侧：封面 + 曲目信息 + 控制按钮 */}
               <div
-                className={`flex flex-col items-center justify-center transition-all duration-500 ${
+                className={`flex min-w-0 flex-col items-center justify-center transition-all duration-500 ${
                   lyricsVisible ? "w-2/5" : "w-full"
                 }`}
               >
@@ -600,12 +703,12 @@ function NowPlayingPage() {
                   track={currentTrack ?? null}
                   size={lyricsVisible ? 300 : 420}
                 />
-                <div className="mt-4 text-center">
-                  <p className="text-lg font-bold text-white">
+                <div className="mt-4 max-w-full px-3 text-center">
+                  <p className="truncate text-lg font-bold text-white">
                     {currentTrack?.title ?? "未在播放"}
                   </p>
-                  <div className="mt-1 flex items-center justify-center gap-2 text-sm text-white/50">
-                    <span className="shrink-0">{currentTrack?.artist?.name ?? "未知艺术家"}</span>
+                  <div className="mt-1 flex min-w-0 items-center justify-center gap-2 text-sm text-white/50">
+                    <span className="min-w-0 truncate">{currentTrack?.artist?.name ?? "未知艺术家"}</span>
                     {currentTrack?.album?.title ? (
                       <>
                         <span className="shrink-0 text-white/25">/</span>
@@ -619,7 +722,7 @@ function NowPlayingPage() {
                 <SeekBar duration={duration} className="mt-6 w-full max-w-sm px-6" />
 
                 {/* 播放控制 + 红心/词 */}
-                <div className="mt-3 flex w-full max-w-sm items-center justify-between px-6">
+                <div className="mt-3 flex w-full max-w-sm flex-wrap items-center justify-between gap-2 px-2 lg:px-6">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => {
@@ -628,6 +731,7 @@ function NowPlayingPage() {
                         toggleCurrentTrackFavorite()
                         toggleFavorite.mutate({
                           trackId: currentTrack.id,
+                          sourceId: currentTrack.source_id,
                           isFavorite: wasFavorite,
                         })
                       }}
@@ -643,7 +747,7 @@ function NowPlayingPage() {
                     </button>
                     {MoreActions}
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 lg:gap-4">
                     <button
                       onClick={() => playPrev()}
                       className="text-white/70 transition-colors hover:text-white"
@@ -668,27 +772,32 @@ function NowPlayingPage() {
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
+                    {playbackCapabilities.spectrum && <button
                       onClick={() => setSpectrumVisible((v) => !v)}
+                      aria-label={spectrumVisible ? "隐藏频谱" : "显示频谱"}
+                      aria-pressed={spectrumVisible}
                       className={`text-base font-bold transition-colors hover:text-white ${
                         spectrumVisible ? "text-white" : "text-white/30"
                       }`}
                     >
                       谱
-                    </button>
+                    </button>}
                     <button
                       onClick={toggleLyrics}
+                      aria-label={lyricsVisible ? "隐藏歌词" : "显示歌词"}
+                      aria-pressed={lyricsVisible}
                       className={`text-base font-bold transition-colors hover:text-white ${
                         lyricsVisible ? "text-white" : "text-white/30"
                       }`}
                     >
                       词
                     </button>
+                    {QueueButton}
                   </div>
                 </div>
 
                 {/* 频谱可视化 */}
-                {spectrumVisible && (
+                {spectrumVisible && playbackCapabilities.spectrum && (
                   <div className="mt-4 w-full max-w-sm px-6">
                     <SpectrumVisualizer
                       visible={spectrumVisible}
@@ -708,133 +817,79 @@ function NowPlayingPage() {
                   transition={{ duration: 0.3 }}
                   className="flex w-3/5 flex-col min-h-0"
                 >
-                  <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} trackId={currentTrack?.id} onFeedback={setTransientFeedback} />
+                  <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} trackId={currentTrack?.id} sourceId={currentTrack?.source_id} onFeedback={setTransientFeedback} />
                 </motion.div>
               )}
             </div>
 
             {/* 移动端布局 */}
-            <div className="flex w-full flex-col md:hidden">
-              {/* 封面 */}
-              <div
-                className={`flex justify-center transition-all duration-500 ${
-                  lyricsVisible ? "py-2" : "py-6 flex-1 items-center"
-                }`}
-              >
-                <CoverArt
-                  track={currentTrack ?? null}
-                  size={lyricsVisible ? 160 : 260}
-                />
-              </div>
-
-              {/* 移动端控制区 — 封面下方 */}
-              <div className="flex flex-col items-center gap-2 px-6">
-                <SeekBar duration={duration} className="w-full max-w-sm" />
-                <div className="w-full max-w-sm text-center">
-                  <p className="text-sm text-white/50">
-                    <span>{currentTrack?.artist?.name ?? "未知艺术家"}</span>
-                    {currentTrack?.album?.title ? (
-                      <>
-                        <span className="px-2 text-white/25">/</span>
-                        <span>{currentTrack.album.title}</span>
-                      </>
-                    ) : null}
-                  </p>
-                </div>
-                <div className="mt-3 flex w-full max-w-sm items-center justify-between px-6">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        if (!currentTrack) return
-                        const wasFavorite = currentTrack.is_favorite
-                        toggleCurrentTrackFavorite()
-                        toggleFavorite.mutate({
-                          trackId: currentTrack.id,
-                          isFavorite: wasFavorite,
-                        })
-                      }}
-                      className="transition-colors hover:text-white"
-                    >
-                      <Heart
-                        className={`h-5 w-5 ${
-                          currentTrack?.is_favorite
-                            ? "fill-red-500 text-red-500"
-                            : "text-white/70"
-                        }`}
-                      />
-                    </button>
-                    {MoreActions}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => playPrev()}
-                      className="text-white/70 transition-colors hover:text-white"
-                    >
-                      <SkipBack className="h-6 w-6" />
-                    </button>
-                    <button
-                      onClick={() => setPlaying(!isPlaying)}
-                      className="text-white/70 transition-colors hover:text-white"
-                    >
-                      {isPlaying ? (
-                        <Pause className="h-6 w-6" />
-                      ) : (
-                        <Play className="h-6 w-6 ml-0.5" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => playNext()}
-                      className="text-white/70 transition-colors hover:text-white"
-                    >
-                      <SkipForward className="h-6 w-6" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setSpectrumVisible((v) => !v)}
-                      className={`text-base font-bold transition-colors hover:text-white ${
-                        spectrumVisible ? "text-white" : "text-white/30"
-                      }`}
-                    >
-                      谱
-                    </button>
-                    <button
-                      onClick={toggleLyrics}
-                      className={`text-base font-bold transition-colors hover:text-white ${
-                        lyricsVisible ? "text-white" : "text-white/30"
-                      }`}
-                    >
-                      词
-                    </button>
-                  </div>
-                </div>
-
-                {/* 频谱可视化 */}
-                {spectrumVisible && (
-                  <div className="mt-3 w-full max-w-sm px-6">
-                    <SpectrumVisualizer
-                      visible={spectrumVisible}
-                      height={48}
-                      color="rgba(255, 255, 255, 0.7)"
-                    />
+            <div className="mobile-nowplaying flex min-h-0 w-full flex-col md:hidden">
+              <div className="mobile-player-content min-h-0 flex-1 overflow-hidden">
+                {!lyricsVisible && (
+                  <div className="flex h-full flex-col items-center justify-center gap-4 overflow-y-auto py-3">
+                    <CoverArt track={currentTrack ?? null} size={320} className="mobile-player-cover shrink-0" />
+                    {currentTrack?.album?.title && <p className="max-w-full truncate px-4 text-sm text-white/60">{currentTrack.album.title}</p>}
+                    {spectrumVisible && playbackCapabilities.spectrum && <div className="w-full max-w-sm px-4"><SpectrumVisualizer visible height={48} color="rgba(255, 255, 255, 0.7)" /></div>}
                   </div>
                 )}
+                {lyricsVisible && <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} trackId={currentTrack?.id} sourceId={currentTrack?.source_id} onFeedback={setTransientFeedback} />}
               </div>
-
-              {/* 歌词 */}
-              {lyricsVisible && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex-1 min-h-0"
-                >
-                  <LyricsView lyrics={lyrics ?? null} onSeek={seekAudio} trackId={currentTrack?.id} onFeedback={setTransientFeedback} />
-                </motion.div>
-              )}
+              <div className="mobile-player-controls shrink-0 rounded-2xl bg-black/10 px-3 pb-2 pt-3">
+                <div className="flex items-center gap-1">
+                  <div className="min-w-0 flex-1"><p className="truncate text-base font-semibold text-white">{currentTrack?.title ?? "未在播放"}</p><p className="truncate text-xs text-white/55">{currentTrack?.artist?.name ?? "未知艺术家"}</p></div>
+                  <button aria-label={currentTrack?.is_favorite ? "取消收藏" : "收藏"} disabled={!currentTrack} onClick={() => {
+                    if (!currentTrack) return
+                    const wasFavorite = currentTrack.is_favorite
+                    toggleCurrentTrackFavorite()
+                    toggleFavorite.mutate({ trackId: currentTrack.id, sourceId: currentTrack.source_id, isFavorite: wasFavorite })
+                  }} className="flex h-11 w-11 items-center justify-center rounded-full"><Heart className={`h-5 w-5 ${currentTrack?.is_favorite ? 'fill-red-500 text-red-500' : 'text-white/70'}`} /></button>
+                  {MoreActions}
+                </div>
+                <SeekBar duration={duration} className="w-full" />
+                <div className="mt-2 flex items-center justify-between">
+                  <button aria-label={playMode === "shuffle" ? "随机播放" : playMode === "repeat-one" ? "单曲循环" : playMode === "repeat-all" ? "列表循环" : "顺序播放"} onClick={cyclePlayMode} className={`flex h-11 w-11 items-center justify-center ${playMode === 'sequential' ? 'text-white/40' : 'text-white'}`}>{playMode === "shuffle" ? <Shuffle className="h-5 w-5" /> : playMode === "repeat-one" ? <Repeat1 className="h-5 w-5" /> : <Repeat className="h-5 w-5" />}</button>
+                  <button aria-label="上一首" onClick={playPrev} disabled={!currentTrack} className="flex h-12 w-12 items-center justify-center text-white disabled:opacity-40"><SkipBack className="h-7 w-7" /></button>
+                  <button aria-label={isPlaying ? "暂停" : "播放"} onClick={() => setPlaying(!isPlaying)} disabled={!currentTrack} className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-black disabled:opacity-40">{isPlaying ? <Pause className="h-7 w-7" /> : <Play className="ml-1 h-7 w-7" />}</button>
+                  <button aria-label="下一首" onClick={playNext} disabled={!currentTrack} className="flex h-12 w-12 items-center justify-center text-white disabled:opacity-40"><SkipForward className="h-7 w-7" /></button>
+                  {playbackCapabilities.equalizer ? <EqualizerControl className="text-white/70 hover:bg-white/10 hover:text-white" /> : <span className="h-11 w-11" />}
+                </div>
+                <div className="mt-1 flex items-center justify-between">
+                  <button aria-label={lyricsVisible ? "隐藏歌词" : "显示歌词"} aria-pressed={lyricsVisible} onClick={toggleLyrics} className={`flex h-11 w-11 items-center justify-center rounded-full text-base font-bold transition-colors hover:bg-white/10 ${lyricsVisible ? 'text-white' : 'text-white/40'}`}>词</button>
+                  {playbackCapabilities.spectrum && <button aria-label={spectrumVisible ? "隐藏频谱" : "显示频谱"} aria-pressed={spectrumVisible} onClick={() => setSpectrumVisible((value) => !value)} className={`flex h-11 w-11 items-center justify-center rounded-full text-base font-bold transition-colors hover:bg-white/10 ${spectrumVisible ? 'text-white' : 'text-white/40'}`}>谱</button>}
+                  {QueueButton}
+                </div>
+                {!playbackCapabilities.equalizer && !playbackCapabilities.spectrum && <p className="mt-1 text-center text-[11px] text-white/45">当前原生播放引擎暂不支持均衡器与实时频谱</p>}
+              </div>
             </div>
           </div>
+
+          <Dialog open={queueOpen} onOpenChange={setQueueOpen}>
+            <DialogContent
+              id="player-queue-dialog"
+              className="flex max-h-[80dvh] flex-col border-white/15 bg-black/80 text-white backdrop-blur-xl"
+              onCloseAutoFocus={(event) => {
+                event.preventDefault()
+                queueTriggerRef.current?.focus()
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>待播列表</DialogTitle>
+                <DialogDescription className="text-white/60">{queue.length} 首歌曲 · 关闭列表后返回当前播放视图</DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+                {queue.length === 0 && <p className="py-8 text-center text-sm text-white/50">选择歌曲后会显示在这里</p>}
+                {queue.map((track, index) => (
+                  <div key={`${track.source_id ?? 'web'}-${track.id}-${index}`} className={`mb-1 flex items-center rounded-xl ${index === currentQueueIndex ? 'bg-white/15' : 'hover:bg-white/5'}`}>
+                    <button aria-label={`播放 ${track.title}`} aria-current={index === currentQueueIndex ? "true" : undefined} onClick={() => setQueue(queue, index)} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 p-2 text-left">
+                      {track.has_cover ? <img src={track.source_id === "local:android" ? track.cover_url ?? undefined : getTrackCoverUrl(track.id, track.album?.cover_path, track.source_id)} alt="" className="h-11 w-11 shrink-0 rounded-md object-cover" /> : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-white/10 text-sm text-white/50">{index + 1}</span>}
+                      <span className="min-w-0"><span className="block truncate text-sm text-white">{track.title}</span><span className="block truncate text-xs text-white/50">{track.artist?.name ?? "未知艺术家"}</span></span>
+                    </button>
+                    <button aria-label={`从待播列表移除 ${track.title}`} onClick={() => removeFromQueue(index)} className="flex h-11 w-11 shrink-0 items-center justify-center text-white/50"><X className="h-4 w-4" /></button>
+                  </div>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={playlistDialogOpen} onOpenChange={setPlaylistDialogOpen}>
             <DialogContent className="border-white/15 bg-black/80 text-white backdrop-blur-xl">
@@ -988,6 +1043,7 @@ function NowPlayingPage() {
                     searchLddcMutation
                       .mutateAsync({
                         trackId: currentTrack.id,
+                        sourceId: currentTrack.source_id,
                         payload: {
                           title: customTitle.trim(),
                           artist: customArtist.trim() || undefined,
@@ -995,6 +1051,7 @@ function NowPlayingPage() {
                         limit: 8,
                       })
                       .then((result) => {
+                        if (currentIdentityRef.current !== trackIdentity(currentTrack)) return
                         if (result.length === 0) {
                           setTransientFeedback("未找到匹配歌词，请换个关键词试试")
                           return
@@ -1125,6 +1182,7 @@ function NowPlayingPage() {
                       saveLyricsMutation
                         .mutateAsync({
                           trackId: currentTrack.id,
+                          sourceId: currentTrack.source_id,
                           payload: {
                             content: c.content,
                             source: c.source,

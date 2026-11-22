@@ -17,7 +17,7 @@ export default function ArtistCard({ artist }: ArtistCardProps) {
       <div className="mx-auto max-w-[160px] aspect-square overflow-hidden rounded-full bg-muted">
         {artist.cover_path ? (
           <img
-            src={getArtistCoverUrl(artist.id)}
+            src={artist.source_id === "local:android" ? artist.cover_url ?? undefined : getArtistCoverUrl(artist.id, artist.source_id)}
             alt={artist.name}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />

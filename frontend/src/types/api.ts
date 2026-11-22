@@ -2,6 +2,8 @@
 
 export interface ArtistOut {
   id: number
+  source_id?: string
+  cover_url?: string
   name: string
   cover_path: string | null
   albums?: AlbumOut[]
@@ -9,6 +11,8 @@ export interface ArtistOut {
 
 export interface AlbumOut {
   id: number
+  source_id?: string
+  cover_url?: string
   title: string
   artist_id: number | null
   artist: ArtistOut | null
@@ -21,6 +25,10 @@ export interface AlbumOut {
 
 export interface TrackOut {
   id: number
+  source_id?: string
+  local_key?: string
+  playback_url?: string
+  cover_url?: string
   file_path: string
   title: string
   artist_id: number | null
@@ -79,6 +87,7 @@ export interface TrackCoverApply {
 }
 
 export interface LyricsOut {
+  source_id?: string
   id: number
   track_id: number
   source: string | null
@@ -127,6 +136,7 @@ export interface PlaylistUpdate {
 
 export interface PlaylistOut {
   id: number
+  source_id?: string
   name: string
   description: string | null
   created_at: string
@@ -152,6 +162,7 @@ export interface FolderAdd {
 
 export interface WatchFolderOut {
   id: number
+  name?: string
   path: string
   last_scanned: string | null
   active: boolean

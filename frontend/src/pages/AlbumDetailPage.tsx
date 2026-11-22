@@ -41,7 +41,7 @@ export default function AlbumDetailPage() {
           <div className="shrink-0 w-40 h-40 rounded-xl shadow-lg overflow-hidden bg-muted">
             {album.cover_path ? (
               <img
-                src={getAlbumCoverUrl(album.id)}
+                src={album.cover_url || getAlbumCoverUrl(album.id, album.source_id)}
                 alt={album.title}
                 className="h-full w-full object-cover"
               />

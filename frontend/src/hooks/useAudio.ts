@@ -1,252 +1,121 @@
-import { useEffect, useCallback } from "react"
-import {
-  DEFAULT_EQUALIZER_BANDS,
-  usePlayerStore,
-  currentTrackSelector,
-  type EqualizerState,
-} from "@/store/playerStore"
-import { getTrackStreamUrl } from "@/api/client"
-import { equalizerPreampDb } from "@/lib/equalizer"
+import { useEffect, useCallback } from 'react'
+import { usePlayerStore } from '@/store/playerStore'
+import { getPlaybackEngine } from '@/platform/playback/runtime'
+import { WebAudioEngine } from '@/platform/playback/webAudioEngine'
+import type { PlaybackSnapshot } from '@/platform/contracts/playback'
+import { trackIdentity } from '@/platform/library'
 
-// 全局唯一的 Audio 实例
-const audio = new Audio()
-let audioContext: AudioContext | null = null
-let mediaSourceNode: MediaElementAudioSourceNode | null = null
-let preampNode: GainNode | null = null
-let equalizerFilters: BiquadFilterNode[] | null = null
-let limiterNode: DynamicsCompressorNode | null = null
-let analyserNode: AnalyserNode | null = null
-let initialized = false
-let previousTrackId: number | null = null
-let pendingCanPlayHandler: (() => void) | null = null
-let rafId: number | null = null
-let lastSyncedTime = -1
-let equalizerConnected = false
+let attached = false
+let lastRequest = -1
+let command = Promise.resolve()
+let applyingCommand = false
+let failedNativeGeneration: number | null = null
+const failed = new Set<string>()
 
-function clearPendingCanPlayHandler() {
-  if (pendingCanPlayHandler) {
-    audio.removeEventListener("canplay", pendingCanPlayHandler)
-    pendingCanPlayHandler = null
+function syncSnapshot(snapshot: PlaybackSnapshot) {
+  const state = usePlayerStore.getState()
+  if (getPlaybackEngine().ownsQueue && snapshot.resolvedTracks) {
+    if (snapshot.generation === state.playbackRequest) state.applyNativeQueueIdentities(snapshot)
+    return
   }
-}
-
-function stopRafSync() {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
+  if (getPlaybackEngine().ownsQueue && lastRequest < 0 && state.playbackRequest === 0 && snapshot.equalizer) state.restoreNativeEqualizer(snapshot.equalizer)
+  if (getPlaybackEngine().ownsQueue && lastRequest < 0 && state.playbackRequest === 0 && snapshot.tracks?.length) {
+    lastRequest = snapshot.generation ?? 0
+    state.restoreNativePlayback(snapshot)
+    return
   }
-}
-
-function syncCurrentTimeFrame() {
-  const t = audio.currentTime
-  // 避免极小抖动引发无意义的全局状态更新
-  if (Math.abs(t - lastSyncedTime) >= 0.1) {
-    usePlayerStore.getState().setCurrentTime(t)
-    lastSyncedTime = t
+  if (snapshot.generation !== undefined && snapshot.generation !== state.playbackRequest) return
+  if (snapshot.error) {
+    if (getPlaybackEngine().ownsQueue) { state.setPlaybackError(snapshot.error); state.applyPlaybackSnapshot(snapshot); return }
+    const track = state.queue[state.currentIndex]
+    const identity = track ? trackIdentity(track) : `${state.playbackRequest}:${state.currentIndex}`
+    if (!failed.has(identity)) {
+      failed.add(identity)
+      state.setPlaybackError(snapshot.error)
+      if (state.playMode !== 'repeat-one' && failed.size < state.queue.length) state.playNext()
+      else state.setPlaying(false)
+    } else state.setPlaying(false)
+    return
   }
-  if (!audio.paused && !audio.ended) {
-    rafId = requestAnimationFrame(syncCurrentTimeFrame)
-  } else {
-    stopRafSync()
-  }
-}
-
-function startRafSync() {
-  stopRafSync()
-  rafId = requestAnimationFrame(syncCurrentTimeFrame)
-}
-
-function initializeAudio() {
-  if (initialized) return
-  initialized = true
-  audio.preload = "auto"
-  audio.addEventListener("playing", startRafSync)
-  audio.addEventListener("pause", stopRafSync)
-
-  audio.addEventListener("timeupdate", () => {
-    if (audio.ended) {
-      return
-    }
-    // 播放中由 RAF 驱动更平滑；timeupdate 仅作暂停/非 RAF 场景兜底，避免双通道抖动。
-    const isPlaying = usePlayerStore.getState().isPlaying
-    if (!isPlaying || rafId === null) {
-      usePlayerStore.getState().setCurrentTime(audio.currentTime)
-      lastSyncedTime = audio.currentTime
-    }
-  })
-  audio.addEventListener("ended", () => {
-    usePlayerStore.getState().playNext()
-  })
-  audio.addEventListener("error", () => {
-    usePlayerStore.getState().setPlaying(false)
-  })
-}
-
-function ensureAudioGraph(): void {
-  const ctx = getAudioContext()
-  if (mediaSourceNode) return
-
-  mediaSourceNode = ctx.createMediaElementSource(audio)
-  preampNode = ctx.createGain()
-  preampNode.gain.value = 1
-  equalizerFilters = DEFAULT_EQUALIZER_BANDS.map((band) => {
-    const filter = ctx.createBiquadFilter()
-    filter.type = "peaking"
-    filter.frequency.value = Math.min(band.frequency, ctx.sampleRate / 2 - 1)
-    filter.Q.value = 0.85
-    filter.gain.value = 0
-    return filter
-  })
-  limiterNode = ctx.createDynamicsCompressor()
-  limiterNode.threshold.value = -1
-  limiterNode.knee.value = 0
-  limiterNode.ratio.value = 18
-  limiterNode.attack.value = 0.003
-  limiterNode.release.value = 0.16
-  analyserNode = ctx.createAnalyser()
-  analyserNode.fftSize = 2048
-  analyserNode.smoothingTimeConstant = 0.4
-
-  mediaSourceNode.connect(analyserNode)
-  let previous: AudioNode = preampNode
-  for (const filter of equalizerFilters) {
-    previous.connect(filter)
-    previous = filter
-  }
-  previous.connect(limiterNode)
-  limiterNode.connect(analyserNode)
-  analyserNode.connect(ctx.destination)
-  applyEqualizer(usePlayerStore.getState().equalizer)
-}
-
-function applyEqualizer(equalizer: EqualizerState): void {
-  if (!equalizerFilters) return
-  if (mediaSourceNode && preampNode && analyserNode && equalizerConnected !== equalizer.enabled) {
-    // A real bypass avoids the compressor's attenuation and look-ahead latency.
-    mediaSourceNode.disconnect()
-    mediaSourceNode.connect(equalizer.enabled ? preampNode : analyserNode)
-    equalizerConnected = equalizer.enabled
-  }
-  if (preampNode) {
-    const preampDb = equalizerPreampDb(equalizer, preampNode.context.sampleRate)
-    const preampGain = Math.pow(10, preampDb / 20)
-    preampNode.gain.setTargetAtTime(
-      preampGain,
-      preampNode.context.currentTime,
-      0.01
-    )
-  }
-  equalizerFilters.forEach((filter, index) => {
-    const targetGain = equalizer.enabled ? equalizer.bands[index]?.gain ?? 0 : 0
-    filter.gain.setTargetAtTime(targetGain, filter.context.currentTime, 0.01)
-  })
+  if (snapshot.ended && !getPlaybackEngine().ownsQueue) { failed.clear(); state.playNext(); return }
+  if (snapshot.isPlaying && state.playbackError) state.setPlaybackError(null)
+  if (getPlaybackEngine().ownsQueue) state.applyPlaybackSnapshot(applyingCommand ? { ...snapshot, isPlaying: state.isPlaying } : snapshot)
+  else state.setCurrentTime(snapshot.position)
 }
 
 export function seekAudio(time: number) {
-  audio.currentTime = time
-  usePlayerStore.getState().setCurrentTime(time)
-  lastSyncedTime = time
+  const safe = Math.max(0, Number.isFinite(time) ? time : 0)
+  usePlayerStore.getState().setCurrentTime(safe)
+  void Promise.resolve(getPlaybackEngine().seek(safe)).catch(() => usePlayerStore.getState().setPlaybackError('无法跳转到该播放位置。'))
 }
-
-export function getAudioElement(): HTMLAudioElement {
-  return audio
-}
-
-export function getAudioContext(): AudioContext {
-  if (!audioContext) {
-    audioContext = new AudioContext()
-  }
-  return audioContext
-}
-
-export function getAudioAnalyserNode(): AnalyserNode | null {
-  return analyserNode
-}
-
-export function getAudioCurrentTime(): number {
-  return Number.isFinite(audio.currentTime) ? audio.currentTime : 0
-}
+export function getAudioElement(): HTMLAudioElement | null { const engine = getPlaybackEngine(); return engine instanceof WebAudioEngine ? engine.audio : null }
+export function getAudioAnalyserNode(): AnalyserNode | null { const engine = getPlaybackEngine(); return engine instanceof WebAudioEngine ? engine.getAnalyser() : null }
+export function getAudioCurrentTime(): number { return getPlaybackEngine().getPosition() }
 
 export function useAudio() {
-  const isPlaying = usePlayerStore((s) => s.isPlaying)
-  const volume = usePlayerStore((s) => s.volume)
-  const equalizer = usePlayerStore((s) => s.equalizer)
-  const trackId = usePlayerStore((s) => currentTrackSelector(s)?.id ?? null)
-  const setPlaying = usePlayerStore((s) => s.setPlaying)
-
+  const queue = usePlayerStore((state) => state.queue)
+  const queueCommandDependency = getPlaybackEngine().ownsQueue ? null : queue
+  const playbackRequest = usePlayerStore((state) => state.playbackRequest)
+  const isPlaying = usePlayerStore((state) => state.isPlaying)
+  const volume = usePlayerStore((state) => state.volume)
+  const equalizer = usePlayerStore((state) => state.equalizer)
+  const mode = usePlayerStore((state) => state.playMode)
+  useEffect(() => { if (isPlaying) failed.clear() }, [isPlaying])
+  useEffect(() => { failed.clear() }, [queue])
   useEffect(() => {
-    initializeAudio()
-  }, [])
-
-  useEffect(() => {
-    if (isPlaying) {
-      startRafSync()
-    } else {
-      stopRafSync()
-    }
-    return () => {
-      stopRafSync()
-    }
-  }, [isPlaying])
-
-  // 曲目切换 + 播放/暂停（合并为一个 effect，避免双 play）
-  useEffect(() => {
-    if (trackId === null) return
-
-    const isNewTrack = previousTrackId !== trackId
-    previousTrackId = trackId
-
-    if (isNewTrack) {
-      clearPendingCanPlayHandler()
-      stopRafSync()
-      usePlayerStore.getState().setCurrentTime(0)
-      lastSyncedTime = 0
-      audio.src = getTrackStreamUrl(trackId)
-      audio.load()
-    }
-
-    if (isPlaying) {
-      const attemptPlay = () => {
-        ensureAudioGraph()
-        const ctx = getAudioContext()
-        if (ctx.state === "suspended") {
-          ctx.resume()
-        }
-        audio.play().catch(() => setPlaying(false))
+    const engine = getPlaybackEngine()
+    if (!attached) {
+      attached = true
+      engine.subscribe(syncSnapshot)
+      if (typeof navigator !== 'undefined' && navigator.mediaSession && !engine.ownsQueue) {
+        navigator.mediaSession.setActionHandler('play', () => usePlayerStore.getState().setPlaying(true))
+        navigator.mediaSession.setActionHandler('pause', () => usePlayerStore.getState().setPlaying(false))
+        navigator.mediaSession.setActionHandler('nexttrack', () => usePlayerStore.getState().playNext())
+        navigator.mediaSession.setActionHandler('previoustrack', () => usePlayerStore.getState().playPrev())
+        navigator.mediaSession.setActionHandler('seekto', (event) => seekAudio(event.seekTime ?? 0))
       }
-      if (isNewTrack) {
-        // 避免 canplay 竞态：已可播则立即播放，否则等待一次 canplay。
-        if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-          attemptPlay()
-        } else {
-          pendingCanPlayHandler = () => {
-            attemptPlay()
-            clearPendingCanPlayHandler()
-          }
-          audio.addEventListener("canplay", pendingCanPlayHandler)
-        }
-      } else {
-        attemptPlay()
-      }
-    } else {
-      clearPendingCanPlayHandler()
-      audio.pause()
     }
-  }, [trackId, isPlaying, setPlaying])
-
-  // 音量控制
+    let attemptedGeneration = playbackRequest
+    command = command.catch(() => {}).then(async () => {
+      await engine.initialize()
+      const state = usePlayerStore.getState()
+      attemptedGeneration = state.playbackRequest
+      // A failed native command stops until an explicit Play request. The pause
+      // rerender and queued metadata changes must not retry an unavailable file.
+      if (engine.ownsQueue && failedNativeGeneration === state.playbackRequest) {
+        if (!state.isPlaying) return
+        failedNativeGeneration = null
+      }
+      applyingCommand = true
+      try {
+      if (lastRequest !== state.playbackRequest) {
+        await engine.setQueue({ tracks: state.queue, index: state.currentIndex, position: state.currentTime, mode: state.playMode, generation: state.playbackRequest })
+        lastRequest = state.playbackRequest
+      }
+      const latest = usePlayerStore.getState()
+      if (latest.playbackRequest !== state.playbackRequest) return
+      if (latest.isPlaying) await engine.play()
+      else await engine.pause()
+      } finally { applyingCommand = false }
+    }).catch((error: unknown) => {
+      if (usePlayerStore.getState().playbackRequest !== attemptedGeneration) return
+      if (engine.ownsQueue) failedNativeGeneration = attemptedGeneration
+      const message = engine.ownsQueue && error instanceof Error && error.message.trim().length <= 500 && !/[<>]/.test(error.message) && [...error.message].every((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127) ? error.message.trim() : ''
+      usePlayerStore.getState().setPlaybackError(message || '无法开始播放，请检查文件或媒体权限。')
+      usePlayerStore.getState().setPlaying(false)
+    })
+  }, [queueCommandDependency, playbackRequest, isPlaying])
+  useEffect(() => { void getPlaybackEngine().setVolume(volume) }, [volume])
   useEffect(() => {
-    audio.volume = volume
-  }, [volume])
-
-  useEffect(() => {
-    applyEqualizer(equalizer)
+    let active = true
+    void Promise.resolve().then(async () => {
+      const engine = getPlaybackEngine()
+      await engine.initialize()
+      if (active) await engine.setEqualizer(usePlayerStore.getState().equalizer)
+    }).catch(() => { if (active) usePlayerStore.getState().setPlaybackError('无法应用均衡器设置。') })
+    return () => { active = false }
   }, [equalizer])
-
-  const seek = useCallback(
-    (time: number) => seekAudio(time),
-    []
-  )
-
-  return { audio, seek }
+  useEffect(() => { void getPlaybackEngine().setMode(mode) }, [mode])
+  const seek = useCallback((time: number) => seekAudio(time), [])
+  return { audio: getAudioElement(), seek }
 }

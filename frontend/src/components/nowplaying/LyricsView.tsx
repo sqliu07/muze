@@ -38,6 +38,7 @@ interface LyricsViewProps {
   lyrics: LyricsOut | null | undefined
   onSeek?: (time: number) => void
   trackId?: number
+  sourceId?: string
   onFeedback?: (message: string, timeoutMs?: number) => void
 }
 
@@ -51,7 +52,7 @@ function isEnglishLyrics(content: string): boolean {
   return enChars / Math.max(1, clean.trim().length) > 0.3
 }
 
-function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
+function LyricsView({ lyrics, onSeek, trackId, sourceId, onFeedback }: LyricsViewProps) {
   const showTranslation = useUIStore((s) => s.showTranslation)
   const {
     lines,
@@ -256,7 +257,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
   const isEnglish = isEnglishLyrics(content) && !isChinese
 
   return (
-    <div className="relative flex h-full items-start overflow-hidden">
+    <div className="lyrics-view relative flex h-full items-start overflow-hidden">
       <div
         className="w-full"
         style={{
@@ -264,7 +265,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
           WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 68%, transparent 100%)",
         }}
       >
-        <div className="relative overflow-hidden px-8 pt-[14vh] pb-[10vh]">
+        <div className="lyrics-viewport relative overflow-hidden px-5 pb-[10vh] pt-[8dvh] md:px-8 md:pt-[14vh]">
           <motion.div ref={lyricsListRef} animate={scrollAnimate} transition={scrollTransition}>
             {/* 前奏点阵：作为首行前的一个额外行 */}
             {hasDots && dotsAfterIndex === -1 && (
@@ -405,7 +406,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
                   >
                     <div className="flex min-w-0 w-full flex-col">
                       <span
-                        className="block max-w-full whitespace-pre-wrap break-words pb-1 [overflow-wrap:anywhere]"
+                        className="lyric-line-text block max-w-full whitespace-pre-wrap break-words pb-1 [overflow-wrap:anywhere]"
                         style={{
                           fontWeight: distance === 0 ? CURRENT_LINE_WEIGHT : OTHER_LINE_WEIGHT,
                           color: "white",
@@ -479,7 +480,7 @@ function LyricsView({ lyrics, onSeek, trackId, onFeedback }: LyricsViewProps) {
       {/* 翻译切换按钮 — 右下角 */}
       {trackId && (
         <div className="absolute bottom-4 right-4 z-10">
-          <TranslationToggle isEnglish={isEnglish} hasTranslation={hasTranslation} trackId={trackId} onFeedback={onFeedback} />
+          <TranslationToggle isEnglish={isEnglish} hasTranslation={hasTranslation} trackId={trackId} sourceId={sourceId} onFeedback={onFeedback} />
         </div>
       )}
     </div>

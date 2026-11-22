@@ -1,4 +1,5 @@
-import axios from 'axios'
+import { remoteApi, requestLibrary, getLibraryMediaUrl } from '@/platform/library'
+import type { LibraryMethod, LibraryQuery } from '@/platform/contracts/library'
 import type {
   TrackOut,
   TrackListOut,
@@ -25,171 +26,193 @@ import type {
   ScanResult,
 } from '@/types/api'
 
-export const api = axios.create({
-  baseURL: '/api',
-  timeout: 30000,
-})
+export const api = remoteApi
+
+interface RequestOptions {
+  params?: LibraryQuery
+  sourceId?: string
+}
+
+async function libraryRequest<T>(method: LibraryMethod, path: string, body?: unknown, options?: RequestOptions): Promise<{ data: T }> {
+  return { data: await requestLibrary<T>(method, path, options?.params, body, options?.sourceId) }
+}
+
+// Keep the existing API-shaped call surface while routing every library operation
+// through the provider captured at request start.
+const libraryApi = {
+  get: <T = unknown>(path: string, options?: RequestOptions) => libraryRequest<T>('GET', path, undefined, options),
+  post: <T = unknown>(path: string, body?: unknown, options?: RequestOptions) => libraryRequest<T>('POST', path, body, options),
+  put: <T = unknown>(path: string, body?: unknown, options?: RequestOptions) => libraryRequest<T>('PUT', path, body, options),
+  patch: <T = unknown>(path: string, body?: unknown, options?: RequestOptions) => libraryRequest<T>('PATCH', path, body, options),
+  delete: <T = unknown>(path: string, options?: RequestOptions) => libraryRequest<T>('DELETE', path, undefined, options),
+}
 
 // --- Tracks ---
 
-export async function getTracks(params?: TracksParams): Promise<TrackListOut> {
-  const { data } = await api.get<TrackListOut>('/tracks', { params })
+export async function getTracks(params?: TracksParams, sourceId?: string): Promise<TrackListOut> {
+  const { data } = await libraryApi.get<TrackListOut>('/tracks', { params: { ...params }, sourceId })
   return data
 }
 
-export async function getTrack(id: number): Promise<TrackOut> {
-  const { data } = await api.get<TrackOut>(`/tracks/${id}`)
+export async function getTrack(id: number, sourceId?: string): Promise<TrackOut> {
+  const { data } = await libraryApi.get<TrackOut>(`/tracks/${id}`, { sourceId })
   return data
 }
 
-export async function updateTrack(id: number, payload: TrackUpdate): Promise<TrackOut> {
-  const { data } = await api.patch<TrackOut>(`/tracks/${id}`, payload)
+export async function updateTrack(id: number, payload: TrackUpdate, sourceId?: string): Promise<TrackOut> {
+  const { data } = await libraryApi.patch<TrackOut>(`/tracks/${id}`, payload, { sourceId })
   return data
 }
 
-export async function searchTrackCover(id: number): Promise<TrackOut> {
-  const { data } = await api.post<TrackOut>(`/tracks/${id}/cover/search`)
+export async function searchTrackCover(id: number, sourceId?: string): Promise<TrackOut> {
+  const { data } = await libraryApi.post<TrackOut>(`/tracks/${id}/cover/search`, undefined, { sourceId })
   return data
 }
 
 export async function searchTrackCoverCandidates(
   id: number,
-  payload: TrackCoverSearch
+  payload: TrackCoverSearch,
+  sourceId?: string
 ): Promise<TrackCoverCandidate[]> {
-  const { data } = await api.post<TrackCoverCandidate[]>(
+  const { data } = await libraryApi.post<TrackCoverCandidate[]>(
     `/tracks/${id}/cover/candidates`,
-    payload
+    payload,
+    { sourceId }
   )
   return data
 }
 
 export async function applyTrackCover(
   id: number,
-  payload: TrackCoverApply
+  payload: TrackCoverApply,
+  sourceId?: string
 ): Promise<TrackOut> {
-  const { data } = await api.post<TrackOut>(`/tracks/${id}/cover`, payload)
+  const { data } = await libraryApi.post<TrackOut>(`/tracks/${id}/cover`, payload, { sourceId })
   return data
 }
 
-export function getTrackStreamUrl(id: number): string {
-  return `${api.defaults.baseURL}/tracks/${id}/stream`
+export function getTrackStreamUrl(id: number, sourceId?: string): string {
+  return getLibraryMediaUrl(id, 'track', sourceId)
 }
 
-export function getTrackCoverUrl(id: number, revision?: string | null): string {
-  const url = `${api.defaults.baseURL}/tracks/${id}/cover`
-  return revision ? `${url}?v=${encodeURIComponent(revision)}` : url
+export function getTrackCoverUrl(id: number, revision?: string | null, sourceId?: string): string {
+  const url = getLibraryMediaUrl(id, 'cover', sourceId)
+  return revision && url ? `${url}?v=${encodeURIComponent(revision)}` : url
 }
 
-export function getAlbumCoverUrl(id: number): string {
-  return `${api.defaults.baseURL}/albums/${id}/cover`
+export function getAlbumCoverUrl(id: number, sourceId?: string): string {
+  return getLibraryMediaUrl(id, 'album', sourceId)
 }
 
-export function getArtistCoverUrl(id: number): string {
-  return `${api.defaults.baseURL}/artists/${id}/cover`
+export function getArtistCoverUrl(id: number, sourceId?: string): string {
+  return getLibraryMediaUrl(id, 'artist', sourceId)
 }
 
 // --- Albums ---
 
-export async function getAlbums(params?: AlbumsParams): Promise<AlbumOut[]> {
-  const { data } = await api.get<AlbumOut[]>('/albums', { params })
+export async function getAlbums(params?: AlbumsParams, sourceId?: string): Promise<AlbumOut[]> {
+  const { data } = await libraryApi.get<AlbumOut[]>('/albums', { params: { ...params }, sourceId })
   return data
 }
 
-export async function getAlbum(id: number): Promise<AlbumOut> {
-  const { data } = await api.get<AlbumOut>(`/albums/${id}`)
+export async function getAlbum(id: number, sourceId?: string): Promise<AlbumOut> {
+  const { data } = await libraryApi.get<AlbumOut>(`/albums/${id}`, { sourceId })
   return data
 }
 
 export async function searchAlbumCoverCandidates(
   id: number,
-  payload: TrackCoverSearch
+  payload: TrackCoverSearch,
+  sourceId?: string
 ): Promise<TrackCoverCandidate[]> {
-  const { data } = await api.post<TrackCoverCandidate[]>(
+  const { data } = await libraryApi.post<TrackCoverCandidate[]>(
     `/albums/${id}/cover/candidates`,
-    payload
+    payload,
+    { sourceId }
   )
   return data
 }
 
 export async function applyAlbumCover(
   id: number,
-  payload: TrackCoverApply
+  payload: TrackCoverApply,
+  sourceId?: string
 ): Promise<AlbumOut> {
-  const { data } = await api.post<AlbumOut>(`/albums/${id}/cover`, payload)
+  const { data } = await libraryApi.post<AlbumOut>(`/albums/${id}/cover`, payload, { sourceId })
   return data
 }
 
 // --- Artists ---
 
-export async function getArtists(): Promise<ArtistOut[]> {
-  const { data } = await api.get<ArtistOut[]>('/artists')
+export async function getArtists(sourceId?: string): Promise<ArtistOut[]> {
+  const { data } = await libraryApi.get<ArtistOut[]>('/artists', { sourceId })
   return data
 }
 
-export async function getArtist(id: number): Promise<ArtistOut> {
-  const { data } = await api.get<ArtistOut>(`/artists/${id}`)
+export async function getArtist(id: number, sourceId?: string): Promise<ArtistOut> {
+  const { data } = await libraryApi.get<ArtistOut>(`/artists/${id}`, { sourceId })
   return data
 }
 
 // --- Playlists ---
 
-export async function getPlaylists(): Promise<PlaylistOut[]> {
-  const { data } = await api.get<PlaylistOut[]>('/playlists')
+export async function getPlaylists(sourceId?: string): Promise<PlaylistOut[]> {
+  const { data } = await libraryApi.get<PlaylistOut[]>('/playlists', { sourceId })
   return data
 }
 
-export async function getPlaylist(id: number): Promise<PlaylistDetailOut> {
-  const { data } = await api.get<PlaylistDetailOut>(`/playlists/${id}`)
+export async function getPlaylist(id: number, sourceId?: string): Promise<PlaylistDetailOut> {
+  const { data } = await libraryApi.get<PlaylistDetailOut>(`/playlists/${id}`, { sourceId })
   return data
 }
 
-export async function createPlaylist(payload: PlaylistCreate): Promise<PlaylistOut> {
-  const { data } = await api.post<PlaylistOut>('/playlists', payload)
+export async function createPlaylist(payload: PlaylistCreate, sourceId?: string): Promise<PlaylistOut> {
+  const { data } = await libraryApi.post<PlaylistOut>('/playlists', payload, { sourceId })
   return data
 }
 
-export async function updatePlaylist(id: number, payload: PlaylistUpdate): Promise<PlaylistOut> {
-  const { data } = await api.put<PlaylistOut>(`/playlists/${id}`, payload)
+export async function updatePlaylist(id: number, payload: PlaylistUpdate, sourceId?: string): Promise<PlaylistOut> {
+  const { data } = await libraryApi.put<PlaylistOut>(`/playlists/${id}`, payload, { sourceId })
   return data
 }
 
-export async function deletePlaylist(id: number): Promise<void> {
-  await api.delete(`/playlists/${id}`)
+export async function deletePlaylist(id: number, sourceId?: string): Promise<void> {
+  await libraryApi.delete(`/playlists/${id}`, { sourceId })
 }
 
-export async function addTracksToPlaylist(id: number, trackIds: number[]): Promise<void> {
+export async function addTracksToPlaylist(id: number, trackIds: number[], sourceId?: string): Promise<void> {
   const payload: PlaylistTracksAdd = { track_ids: trackIds }
-  await api.post(`/playlists/${id}/tracks`, payload)
+  await libraryApi.post(`/playlists/${id}/tracks`, payload, { sourceId })
 }
 
-export async function removeTrackFromPlaylist(playlistId: number, trackId: number): Promise<void> {
-  await api.delete(`/playlists/${playlistId}/tracks/${trackId}`)
+export async function removeTrackFromPlaylist(playlistId: number, trackId: number, sourceId?: string): Promise<void> {
+  await libraryApi.delete(`/playlists/${playlistId}/tracks/${trackId}`, { sourceId })
 }
 
-export async function reorderPlaylist(id: number, trackIds: number[]): Promise<void> {
+export async function reorderPlaylist(id: number, trackIds: number[], sourceId?: string): Promise<void> {
   const payload: PlaylistTracksReorder = { track_ids: trackIds }
-  await api.patch(`/playlists/${id}/tracks/reorder`, payload)
+  await libraryApi.patch(`/playlists/${id}/tracks/reorder`, payload, { sourceId })
 }
 
 // --- Favorites ---
 
-export async function getFavorites(): Promise<TrackOut[]> {
-  const { data } = await api.get<TrackOut[]>('/favorites')
+export async function getFavorites(sourceId?: string): Promise<TrackOut[]> {
+  const { data } = await libraryApi.get<TrackOut[]>('/favorites', { sourceId })
   return data
 }
 
-export async function addFavorite(trackId: number): Promise<void> {
-  await api.post(`/favorites/${trackId}`)
+export async function addFavorite(trackId: number, sourceId?: string): Promise<void> {
+  await libraryApi.post(`/favorites/${trackId}`, undefined, { sourceId })
 }
 
-export async function removeFavorite(trackId: number): Promise<void> {
-  await api.delete(`/favorites/${trackId}`)
+export async function removeFavorite(trackId: number, sourceId?: string): Promise<void> {
+  await libraryApi.delete(`/favorites/${trackId}`, { sourceId })
 }
 
 // --- Lyrics ---
 
-export async function getLyrics(trackId: number): Promise<LyricsOut> {
-  const { data } = await api.get<LyricsOut>(`/lyrics/${trackId}`)
+export async function getLyrics(trackId: number, sourceId?: string): Promise<LyricsOut> {
+  const { data } = await libraryApi.get<LyricsOut>(`/lyrics/${trackId}`, { sourceId })
   return data
 }
 
@@ -201,9 +224,11 @@ export interface SearchLyricsOptions {
 export async function searchLyrics(
   trackId: number,
   payload: LyricsSearch,
-  options: SearchLyricsOptions = {}
+  options: SearchLyricsOptions = {},
+  sourceId?: string
 ): Promise<LyricsOut> {
-  const { data } = await api.post<LyricsOut>(`/lyrics/${trackId}/search`, payload, {
+  const { data } = await libraryApi.post<LyricsOut>(`/lyrics/${trackId}/search`, payload, {
+    sourceId,
     params: {
       refresh: options.refresh ? 1 : 0,
       allow_unsynced: options.allowUnsynced ? 1 : 0,
@@ -212,23 +237,23 @@ export async function searchLyrics(
   return data
 }
 
-export async function saveLyrics(trackId: number, payload: LyricsUpdate): Promise<LyricsOut> {
-  const { data } = await api.put<LyricsOut>(`/lyrics/${trackId}`, payload)
+export async function saveLyrics(trackId: number, payload: LyricsUpdate, sourceId?: string): Promise<LyricsOut> {
+  const { data } = await libraryApi.put<LyricsOut>(`/lyrics/${trackId}`, payload, { sourceId })
   return data
 }
 
-export async function restoreLyrics(trackId: number): Promise<LyricsOut> {
-  const { data } = await api.post<LyricsOut>(`/lyrics/${trackId}/restore`)
+export async function restoreLyrics(trackId: number, sourceId?: string): Promise<LyricsOut> {
+  const { data } = await libraryApi.post<LyricsOut>(`/lyrics/${trackId}/restore`, undefined, { sourceId })
   return data
 }
 
-export async function updateLyricsOffset(trackId: number, offsetMs: number): Promise<LyricsOut> {
-  const { data } = await api.put<LyricsOut>(`/lyrics/${trackId}/offset`, { offset_ms: offsetMs })
+export async function updateLyricsOffset(trackId: number, offsetMs: number, sourceId?: string): Promise<LyricsOut> {
+  const { data } = await libraryApi.put<LyricsOut>(`/lyrics/${trackId}/offset`, { offset_ms: offsetMs }, { sourceId })
   return data
 }
 
-export async function translateLyrics(trackId: number, force = false): Promise<LyricsOut> {
-  const { data } = await api.post<LyricsOut>(`/lyrics/${trackId}/translate`, null, { params: { force } })
+export async function translateLyrics(trackId: number, force = false, sourceId?: string): Promise<LyricsOut> {
+  const { data } = await libraryApi.post<LyricsOut>(`/lyrics/${trackId}/translate`, null, { params: { force }, sourceId })
   return data
 }
 
@@ -239,52 +264,53 @@ export interface LyricsStatus {
   has_original: number
 }
 
-export async function getLyricsStatus(): Promise<LyricsStatus> {
-  const { data } = await api.get<LyricsStatus>('/lyrics/status')
+export async function getLyricsStatus(sourceId?: string): Promise<LyricsStatus> {
+  const { data } = await libraryApi.get<LyricsStatus>('/lyrics/status', { sourceId })
   return data
 }
 
 export async function searchLddcCandidates(
   trackId: number,
   payload: LyricsSearch,
-  limit = 8
+  limit = 8,
+  sourceId?: string
 ): Promise<LyricsCandidate[]> {
-  const { data } = await api.post<LyricsCandidate[]>(
+  const { data } = await libraryApi.post<LyricsCandidate[]>(
     `/lyrics/${trackId}/search/lddc-candidates`,
     payload,
-    { params: { limit } }
+    { params: { limit }, sourceId }
   )
   return data
 }
 
 // --- Library ---
 
-export async function scanLibrary(path: string): Promise<ScanResult> {
-  const { data } = await api.post<ScanResult>('/library/scan', { path })
+export async function scanLibrary(path?: string, sourceId?: string): Promise<ScanResult> {
+  const { data } = await libraryApi.post<ScanResult>('/library/scan', { path }, { sourceId })
   return data
 }
 
-export async function getFolders(): Promise<WatchFolderOut[]> {
-  const { data } = await api.get<WatchFolderOut[]>('/library/folders')
+export async function getFolders(sourceId?: string): Promise<WatchFolderOut[]> {
+  const { data } = await libraryApi.get<WatchFolderOut[]>('/library/folders', { sourceId })
   return data
 }
 
-export async function addFolder(payload: FolderAdd): Promise<WatchFolderOut> {
-  const { data } = await api.post<WatchFolderOut>('/library/folders', payload)
+export async function addFolder(payload: FolderAdd, sourceId?: string): Promise<WatchFolderOut> {
+  const { data } = await libraryApi.post<WatchFolderOut>('/library/folders', payload, { sourceId })
   return data
 }
 
-export async function removeFolder(id: number): Promise<void> {
-  await api.delete(`/library/folders/${id}`)
+export async function removeFolder(id: number, sourceId?: string): Promise<void> {
+  await libraryApi.delete(`/library/folders/${id}`, { sourceId })
 }
 
-export async function refreshLibrary(): Promise<ScanResult> {
-  const { data } = await api.post<ScanResult>('/library/refresh')
+export async function refreshLibrary(sourceId?: string): Promise<ScanResult> {
+  const { data } = await libraryApi.post<ScanResult>('/library/refresh', undefined, { sourceId })
   return data
 }
 
-export async function clearLibrary(): Promise<void> {
-  await api.delete('/library/clear')
+export async function clearLibrary(sourceId?: string): Promise<void> {
+  await libraryApi.delete('/library/clear', { sourceId })
 }
 
 export interface BrowseEntry {
@@ -298,13 +324,13 @@ export interface BrowseResult {
   entries: BrowseEntry[]
 }
 
-export async function browseDirectories(path: string = '/'): Promise<BrowseResult> {
-  const { data } = await api.get<BrowseResult>('/library/browse', { params: { path } })
+export async function browseDirectories(path: string = '/', sourceId?: string): Promise<BrowseResult> {
+  const { data } = await libraryApi.get<BrowseResult>('/library/browse', { params: { path }, sourceId })
   return data
 }
 
-export async function addFoldersBatch(paths: string[]): Promise<WatchFolderOut[]> {
-  const { data } = await api.post<WatchFolderOut[]>('/library/folders/batch', { paths })
+export async function addFoldersBatch(paths: string[], sourceId?: string): Promise<WatchFolderOut[]> {
+  const { data } = await libraryApi.post<WatchFolderOut[]>('/library/folders/batch', { paths }, { sourceId })
   return data
 }
 
@@ -316,8 +342,8 @@ export interface SearchResult {
   tracks: TrackOut[]
 }
 
-export async function searchAll(q: string, limit = 10): Promise<SearchResult> {
-  const { data } = await api.get<SearchResult>('/search', { params: { q, limit } })
+export async function searchAll(q: string, limit = 10, sourceId?: string): Promise<SearchResult> {
+  const { data } = await libraryApi.get<SearchResult>('/search', { params: { q, limit }, sourceId })
   return data
 }
 
@@ -332,18 +358,18 @@ export interface ArtistImageFetchStatus {
   current_artist: string | null
 }
 
-export async function fetchArtistImages(): Promise<{ success: number; total: number; failed: number }> {
-  const { data } = await api.post('/artists/batch-fetch-images')
+export async function fetchArtistImages(sourceId?: string): Promise<{ success: number; total: number; failed: number }> {
+  const { data } = await libraryApi.post<{ success: number; total: number; failed: number }>('/artists/batch-fetch-images', undefined, { sourceId })
   return data
 }
 
-export async function getArtistImageFetchStatus(): Promise<ArtistImageFetchStatus> {
-  const { data } = await api.get('/artists/fetch-status')
+export async function getArtistImageFetchStatus(sourceId?: string): Promise<ArtistImageFetchStatus> {
+  const { data } = await libraryApi.get<ArtistImageFetchStatus>('/artists/fetch-status', { sourceId })
   return data
 }
 
-export async function fetchArtistImage(artistId: number): Promise<{ status: string; message: string }> {
-  const { data } = await api.post(`/artists/${artistId}/fetch-image`)
+export async function fetchArtistImage(artistId: number, sourceId?: string): Promise<{ status: string; message: string }> {
+  const { data } = await libraryApi.post<{ status: string; message: string }>(`/artists/${artistId}/fetch-image`, undefined, { sourceId })
   return data
 }
 
@@ -363,17 +389,17 @@ export interface DeepSeekTestResult {
   message: string
 }
 
-export async function getSettings(): Promise<AppSettings> {
-  const { data } = await api.get<AppSettings>('/settings')
+export async function getSettings(sourceId?: string): Promise<AppSettings> {
+  const { data } = await libraryApi.get<AppSettings>('/settings', { sourceId })
   return data
 }
 
-export async function updateSettings(payload: Partial<AppSettings>): Promise<AppSettings> {
-  const { data } = await api.put<AppSettings>('/settings', payload)
+export async function updateSettings(payload: Partial<AppSettings>, sourceId?: string): Promise<AppSettings> {
+  const { data } = await libraryApi.put<AppSettings>('/settings', payload, { sourceId })
   return data
 }
 
-export async function testDeepSeekConnection(): Promise<DeepSeekTestResult> {
-  const { data } = await api.post<DeepSeekTestResult>('/settings/deepseek/test')
+export async function testDeepSeekConnection(sourceId?: string): Promise<DeepSeekTestResult> {
+  const { data } = await libraryApi.post<DeepSeekTestResult>('/settings/deepseek/test', undefined, { sourceId })
   return data
 }

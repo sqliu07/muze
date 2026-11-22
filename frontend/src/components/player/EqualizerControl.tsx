@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { getPlaybackCapabilities } from "@/platform/playback/runtime"
 
 const PRESET_LABELS: Record<EqualizerPresetName, string> = {
   flat: "平直",
@@ -277,12 +278,13 @@ function FrequencyResponseCurve({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       />
     </div>
   )
 }
 
-export function EqualizerControl() {
+export function EqualizerControl({ className }: { className?: string }) {
   const equalizer = usePlayerStore((s) => s.equalizer)
   const setEqualizerEnabled = usePlayerStore((s) => s.setEqualizerEnabled)
   const setEqualizerPreamp = usePlayerStore((s) => s.setEqualizerPreamp)
@@ -291,6 +293,7 @@ export function EqualizerControl() {
   const resetEqualizer = usePlayerStore((s) => s.resetEqualizer)
 
   const presetNames = Object.keys(EQUALIZER_PRESETS) as EqualizerPresetName[]
+  if (!getPlaybackCapabilities().equalizer) return null
 
   return (
     <Dialog>
@@ -301,7 +304,7 @@ export function EqualizerControl() {
               variant="ghost"
               size="icon"
               aria-label="均衡器"
-              className={cn(equalizer.enabled && "text-primary")}
+              className={cn("h-11 w-11 md:h-10 md:w-10", equalizer.enabled && "text-primary", className)}
             >
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
@@ -312,7 +315,7 @@ export function EqualizerControl() {
         </TooltipContent>
       </Tooltip>
 
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+      <DialogContent className="max-h-[90dvh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>均衡器</DialogTitle>
           <DialogDescription>
@@ -356,7 +359,7 @@ export function EqualizerControl() {
               variant={
                 equalizer.preset === preset ? "default" : "outline"
               }
-              className="h-7 shrink-0 px-2.5 text-xs"
+              className="h-11 shrink-0 px-3 text-xs md:h-7 md:px-2.5"
               onClick={() => setEqualizerPreset(preset)}
             >
               {PRESET_LABELS[preset]}
@@ -366,7 +369,7 @@ export function EqualizerControl() {
             <Button
               size="sm"
               variant="default"
-              className="h-7 shrink-0 px-2.5 text-xs"
+              className="h-11 shrink-0 px-3 text-xs md:h-7 md:px-2.5"
               disabled
             >
               自定义
@@ -375,7 +378,27 @@ export function EqualizerControl() {
         </div>
 
         {/* 滑块区域（包含频响曲线） */}
-        <div className="overflow-x-auto pt-1">
+        <div className="space-y-5 md:hidden">
+          <div className="rounded-lg bg-muted/30 px-3 py-2">
+            <div className="flex items-center justify-between text-xs"><span>前级增益</span><span className="tabular-nums">{formatDb(equalizer.preamp)} dB</span></div>
+            <Slider aria-label="前级增益" min={-12} max={12} step={1} value={[equalizer.preamp]} onValueChange={([value]) => setEqualizerPreamp(value)} className="h-11" />
+          </div>
+          {[equalizer.bands.slice(0, 5), equalizer.bands.slice(5)].map((bands, row) => (
+            <div key={row} className="grid grid-cols-5 gap-2">
+              {bands.map((band) => (
+                <div key={band.frequency} className="flex min-w-0 flex-col items-center gap-2">
+                  <span className={cn("text-xs tabular-nums", band.gain !== 0 && "text-primary")}>{formatDb(band.gain)}</span>
+                  <div className="flex h-32 w-full items-center justify-center rounded-lg bg-muted/30 py-2">
+                    <Slider aria-label={`${band.label} Hz 增益`} orientation="vertical" min={-12} max={12} step={1} value={[band.gain]} onValueChange={([value]) => setEqualizerBandGain(band.frequency, value)} className="h-full w-11 justify-center" />
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">{band.label}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          <p className="text-center text-xs text-muted-foreground">各频段范围 −12 至 +12 dB</p>
+        </div>
+        <div className="hidden overflow-x-auto pt-1 md:block">
           <div className="flex min-w-[760px] gap-2 sm:gap-3">
             {/* Preamp */}
             <div className="flex w-16 shrink-0 flex-col items-center gap-1.5">

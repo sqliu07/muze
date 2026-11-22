@@ -6,6 +6,7 @@ import {
 } from '@/api/hooks/useAlbums'
 import AlbumGrid from '@/components/library/AlbumGrid'
 import SortSelector from '@/components/library/SortSelector'
+import { LocalLibraryNotice } from '@/components/library/LocalLibraryNotice'
 import type { AlbumOut, TrackCoverCandidate } from '@/types/api'
 import {
   Dialog,
@@ -52,6 +53,7 @@ export default function AlbumsPage() {
     try {
       const result = await searchAlbumCoverCandidates.mutateAsync({
         id: selectedAlbum.id,
+        sourceId: selectedAlbum.source_id,
         payload: {
           title: coverTitle.trim(),
           artist: coverArtist.trim() || undefined,
@@ -77,6 +79,7 @@ export default function AlbumsPage() {
     try {
       await applyAlbumCover.mutateAsync({
         id: selectedAlbum.id,
+        sourceId: selectedAlbum.source_id,
         payload: {
           image_url: candidate.image_url,
           album_title: candidate.album_title,
@@ -93,7 +96,7 @@ export default function AlbumsPage() {
 
   return (
     <div>
-      <div className="px-4 pt-4 flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
         <h1 className="text-2xl font-bold">
           专辑{albums ? ` · ${albums.length} 张专辑` : ''}
         </h1>
@@ -105,6 +108,7 @@ export default function AlbumsPage() {
           onOrderChange={setSortOrder}
         />
       </div>
+      <div className="px-4 pt-3"><LocalLibraryNotice /></div>
       {isLoading ? (
         <div className="flex items-center justify-center p-12 text-muted-foreground">
           加载中...

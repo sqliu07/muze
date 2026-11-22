@@ -53,7 +53,7 @@ export function SearchResults({ query }: SearchResultsProps) {
                 >
                   {artist.cover_path ? (
                     <img
-                      src={getArtistCoverUrl(artist.id)}
+                      src={artist.cover_url || getArtistCoverUrl(artist.id, artist.source_id)}
                       alt={artist.name}
                       className="h-24 w-24 rounded-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
@@ -92,7 +92,7 @@ export function SearchResults({ query }: SearchResultsProps) {
                 >
                   {track.album?.cover_path ? (
                     <img
-                      src={getAlbumCoverUrl(track.album_id!)}
+                      src={track.cover_url || track.album?.cover_url || getAlbumCoverUrl(track.album_id!, track.source_id)}
                       alt={track.album.title}
                       className="h-10 w-10 rounded object-cover"
                     />

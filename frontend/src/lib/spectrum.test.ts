@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { bassEnergy, logarithmicBins, sampleSpectrum } from "./spectrum.ts"
+import { bassEnergy, logarithmicBins, resetSilentSpectrum, sampleSpectrum } from "./spectrum.ts"
 
 test("logarithmic bins increase monotonically within the FFT range", () => {
   const bins = logarithmicBins(1024, 48_000, 64)
@@ -24,4 +24,21 @@ test("bass energy reads only low-frequency bins", () => {
   data.fill(0)
   data[500] = 255
   assert.equal(bassEnergy(data, 48_000), 0)
+})
+
+test("one pause or seek reset clears all retained curve amplitude without another animation frame", () => {
+  const smoothed = new Float32Array(64).fill(0.9)
+  assert.equal(resetSilentSpectrum(new Uint8Array(1024), smoothed), true)
+  assert.ok(smoothed.every((value) => value === 0))
+  smoothed.fill(0.5)
+  assert.equal(resetSilentSpectrum(new Uint8Array(0), smoothed), true)
+  assert.ok(smoothed.every((value) => value === 0))
+})
+
+test("an active spectrum keeps its attack and release smoothing", () => {
+  const smoothed = new Float32Array(64).fill(0.5)
+  const data = new Uint8Array(1024)
+  data[500] = 1
+  assert.equal(resetSilentSpectrum(data, smoothed), false)
+  assert.ok(smoothed.every((value) => value === 0.5))
 })

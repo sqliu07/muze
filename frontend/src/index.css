@@ -138,6 +138,17 @@
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    margin: 0;
+    overscroll-behavior: none;
+  }
+
+  html, body, #root {
+    min-height: 100%;
+    width: 100%;
+  }
+
+  button, a, input, textarea, [role='slider'] {
+    -webkit-tap-highlight-color: transparent;
   }
 
   * {
@@ -150,6 +161,102 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+}
+
+.app-shell {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.app-header, .nowplaying-header {
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
+}
+
+.mobile-tab-bar {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.nowplaying-page {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (max-width: 767px) {
+  button, [role='menuitem'], [role='checkbox'], [role='switch'] {
+    min-height: 44px;
+  }
+
+  input:not([type='checkbox']):not([type='radio']), select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .mobile-sheet {
+    top: auto !important;
+    bottom: 0;
+    left: 0 !important;
+    right: 0;
+    width: 100%;
+    max-width: 100% !important;
+    max-height: min(90dvh, calc(100dvh - env(safe-area-inset-top, 0px))) !important;
+    transform: none !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 20px 20px 0 0;
+    padding: 24px 20px max(20px, env(safe-area-inset-bottom, 0px));
+    animation: none !important;
+  }
+
+  .mobile-player-cover {
+    width: min(72vw, 34dvh, 320px) !important;
+    height: min(72vw, 34dvh, 320px) !important;
+  }
+
+  .lyric-line-text {
+    font-size: clamp(1.6rem, 7vw, 2rem) !important;
+  }
+
+  .nowplaying-actions [role='menuitem'] {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (min-width: 560px) and (max-width: 767px) and (max-height: 520px) and (orientation: landscape) {
+  .nowplaying-header {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: 0;
+  }
+
+  .mobile-nowplaying {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    column-gap: 12px;
+  }
+
+  .mobile-player-content {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .mobile-player-controls {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .mobile-player-cover {
+    width: min(32vw, 42dvh) !important;
+    height: min(32vw, 42dvh) !important;
+  }
+
+  .lyrics-viewport {
+    padding-top: 4dvh;
+    padding-left: 12px;
+    padding-right: 12px;
   }
 }
 

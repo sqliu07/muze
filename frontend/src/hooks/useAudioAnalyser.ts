@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
 import { getAudioAnalyserNode, getAudioElement } from "@/hooks/useAudio"
 import { bassEnergy as computeBassEnergy } from "@/lib/spectrum"
+import { getPlaybackEngine } from "@/platform/playback/runtime"
+import type { PlaybackEngine } from "@/platform/contracts/playback"
 
 export interface AudioAnalyserResult {
   bassEnergy: number
@@ -16,11 +18,56 @@ const frame: AudioAnalyserResult = {
 const listeners = new Set<(frame: AudioAnalyserResult) => void>()
 let stopSampling: (() => void) | undefined
 
+/** Native PCM frames already have a bounded sampling rate; do not poll a second player. */
+function startNativeSampling(engine: PlaybackEngine): () => void {
+  const motion = window.matchMedia("(prefers-reduced-motion: reduce)")
+  let unsubscribe: (() => void) | undefined
+  const notify = () => listeners.forEach((callback) => callback(frame))
+  const clear = () => {
+    frame.spectrumData.fill(0)
+    frame.bassEnergy = 0
+    frame.bassSmoothed = 0
+    notify()
+  }
+  const update = () => {
+    const enabled = !document.hidden && !motion.matches
+    if (!enabled) {
+      unsubscribe?.()
+      unsubscribe = undefined
+      clear()
+    } else if (!unsubscribe) {
+      unsubscribe = engine.subscribeAnalysis?.((next) => {
+        if (!next) { clear(); return }
+        frame.spectrumData = next.spectrumData
+        frame.sampleRate = next.sampleRate
+        frame.bassEnergy = computeBassEnergy(next.spectrumData, next.sampleRate)
+        frame.bassSmoothed += (frame.bassEnergy - frame.bassSmoothed) * 0.35
+        notify()
+      })
+    }
+  }
+  document.addEventListener("visibilitychange", update)
+  motion.addEventListener("change", update)
+  update()
+  return () => {
+    unsubscribe?.()
+    document.removeEventListener("visibilitychange", update)
+    motion.removeEventListener("change", update)
+    clear()
+  }
+}
+
 /** One polling loop for all visible consumers; no AudioContext is created by rendering. */
 export function subscribeAudioAnalysis(listener: (frame: AudioAnalyserResult) => void): () => void {
   listeners.add(listener)
+  const engine = getPlaybackEngine()
+  if (!stopSampling && engine.subscribeAnalysis) stopSampling = startNativeSampling(engine)
   if (!stopSampling) {
     const audio = getAudioElement()
+    if (!audio) {
+      listener(frame)
+      return () => listeners.delete(listener)
+    }
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)")
     let raf: number | null = null
     let lastFrame = -Infinity

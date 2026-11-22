@@ -2,6 +2,7 @@ import Icon from '@mdi/react'
 import { mdiTranslateVariant } from '@mdi/js'
 import { useUIStore } from '@/store/uiStore'
 import { useTranslateLyrics } from '@/api/hooks/useLyrics'
+import { translationFailureMessage } from '@/lib/translationError'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,10 +14,11 @@ interface TranslationToggleProps {
   isEnglish: boolean
   hasTranslation: boolean
   trackId: number
+  sourceId?: string
   onFeedback?: (message: string, timeoutMs?: number) => void
 }
 
-export default function TranslationToggle({ isEnglish, hasTranslation, trackId, onFeedback }: TranslationToggleProps) {
+export default function TranslationToggle({ isEnglish, hasTranslation, trackId, sourceId, onFeedback }: TranslationToggleProps) {
   const showTranslation = useUIStore((s) => s.showTranslation)
   const toggleTranslation = useUIStore((s) => s.toggleTranslation)
   const translateMutation = useTranslateLyrics()
@@ -27,11 +29,11 @@ export default function TranslationToggle({ isEnglish, hasTranslation, trackId, 
     if (translateMutation.isPending) return
     onFeedback?.("正在翻译歌词...", 0)
     try {
-      await translateMutation.mutateAsync({ trackId, force: true })
+      await translateMutation.mutateAsync({ trackId, sourceId, force: true })
       if (!showTranslation) toggleTranslation()
       onFeedback?.("翻译完成", 2600)
-    } catch {
-      onFeedback?.("翻译失败，请稍后重试", 2600)
+    } catch (error) {
+      onFeedback?.(translationFailureMessage(error), 4200)
     }
   }
 

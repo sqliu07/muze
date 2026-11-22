@@ -3,6 +3,10 @@ import { persist } from "zustand/middleware"
 import { type TrackOut } from "@/types/api"
 import { PREV_RESTART_THRESHOLD } from "@/config/player"
 import { seekAudio } from "@/hooks/useAudio"
+import { trackIdentity } from '@/platform/library'
+import type { PlaybackSnapshot } from '@/platform/contracts/playback'
+import { createPlaybackStorage } from '@/platform/playback/storage'
+import { reconcileResolvedPlaybackQueue } from '@/platform/playback/nativeQueueAck'
 
 export type Track = TrackOut
 
@@ -24,6 +28,8 @@ interface PlayerState {
   playMode: PlayMode
   currentTime: number
   equalizer: EqualizerState
+  playbackRequest: number
+  playbackError: string | null
 
   setQueue: (tracks: Track[], startIndex?: number) => void
   playTrack: (track: Track) => void
@@ -35,6 +41,11 @@ interface PlayerState {
   setVolume: (volume: number) => void
   setPlayMode: (mode: PlayMode) => void
   setCurrentTime: (time: number) => void
+  setPlaybackError: (error: string | null) => void
+  applyPlaybackSnapshot: (snapshot: PlaybackSnapshot) => void
+  applyNativeQueueIdentities: (snapshot: PlaybackSnapshot) => void
+  restoreNativePlayback: (snapshot: PlaybackSnapshot) => void
+  restoreNativeEqualizer: (equalizer: EqualizerState) => void
   setEqualizerEnabled: (enabled: boolean) => void
   setEqualizerPreamp: (gain: number) => void
   setEqualizerBandGain: (frequency: number, gain: number) => void
@@ -62,32 +73,38 @@ export const usePlayerStore = create<PlayerState>()(
       playMode: "sequential",
       currentTime: 0,
       equalizer: createEqualizerState(),
+      playbackRequest: 0,
+      playbackError: null,
 
       setQueue: (tracks, startIndex = 0) =>
-        set({
+        set((state) => ({
           queue: tracks,
-          currentIndex: tracks.length > 0 ? startIndex : -1,
+          currentIndex: tracks.length > 0 ? Math.max(0, Math.min(tracks.length - 1, startIndex)) : -1,
           isPlaying: tracks.length > 0,
           currentTime: 0,
-        }),
+          playbackRequest: state.playbackRequest + 1,
+          playbackError: null,
+        })),
 
       playTrack: (track) => {
         const { queue } = get()
-        const existingIndex = queue.findIndex((t) => t.id === track.id)
+        const existingIndex = queue.findIndex((t) => trackIdentity(t) === trackIdentity(track))
         if (existingIndex !== -1) {
-          set({ currentIndex: existingIndex, isPlaying: true, currentTime: 0 })
+          set((state) => ({ currentIndex: existingIndex, isPlaying: true, currentTime: 0, playbackRequest: state.playbackRequest + 1, playbackError: null }))
         } else {
           set({
             queue: [track, ...queue],
             currentIndex: 0,
             isPlaying: true,
             currentTime: 0,
+            playbackRequest: get().playbackRequest + 1,
+            playbackError: null,
           })
         }
       },
 
       addToQueue: (track) =>
-        set((state) => ({ queue: [...state.queue, track] })),
+        set((state) => ({ queue: [...state.queue, track], playbackRequest: state.playbackRequest + 1 })),
 
       removeFromQueue: (index) =>
         set((state) => {
@@ -106,8 +123,10 @@ export const usePlayerStore = create<PlayerState>()(
           return {
             queue: newQueue,
             currentIndex: newCurrentIndex,
+            currentTime: index === state.currentIndex ? 0 : state.currentTime,
             isPlaying:
               newCurrentIndex === -1 ? false : state.isPlaying,
+            playbackRequest: state.playbackRequest + 1,
           }
         }),
 
@@ -135,7 +154,7 @@ export const usePlayerStore = create<PlayerState>()(
             nextIndex = currentIndex + 1
             break
         }
-        set({ currentIndex: nextIndex, currentTime: 0 })
+        set((state) => ({ currentIndex: nextIndex, currentTime: 0, playbackRequest: state.playbackRequest + 1 }))
       },
 
       playPrev: () => {
@@ -150,13 +169,37 @@ export const usePlayerStore = create<PlayerState>()(
 
         const prevIndex =
           currentIndex <= 0 ? queue.length - 1 : currentIndex - 1
-        set({ currentIndex: prevIndex, currentTime: 0 })
+        set((state) => ({ currentIndex: prevIndex, currentTime: 0, playbackRequest: state.playbackRequest + 1 }))
       },
 
       setPlaying: (playing) => set({ isPlaying: playing }),
       setVolume: (volume) => set({ volume }),
       setPlayMode: (mode) => set({ playMode: mode }),
       setCurrentTime: (time) => set({ currentTime: time }),
+      setPlaybackError: (error) => set({ playbackError: error }),
+      applyPlaybackSnapshot: (snapshot) => set((state) => ({
+        currentIndex: snapshot.index >= 0 && snapshot.index < state.queue.length ? snapshot.index : state.currentIndex,
+        currentTime: Math.max(0, snapshot.position),
+        isPlaying: snapshot.isPlaying,
+      })),
+      applyNativeQueueIdentities: (snapshot) => set((state) => {
+        if (snapshot.generation !== state.playbackRequest) return state
+        const resolved = reconcileResolvedPlaybackQueue(state.queue, snapshot.requestedIndex ?? state.currentIndex, snapshot.resolvedTracks, snapshot.resolvedIndices, snapshot.resolvedIndex)
+        if (!resolved) return state
+        const index = snapshot.resolvedCurrentIndex ?? resolved.index
+        if (!Number.isInteger(index) || (resolved.tracks.length ? index < 0 || index >= resolved.tracks.length : index !== -1)) return state
+        return resolved.tracks !== state.queue || index !== state.currentIndex ? { queue: resolved.tracks, currentIndex: index } : state
+      }),
+      restoreNativePlayback: (snapshot) => set({
+        queue: snapshot.tracks ?? [],
+        currentIndex: snapshot.index,
+        currentTime: snapshot.position,
+        isPlaying: snapshot.isPlaying,
+        playMode: snapshot.mode,
+        playbackRequest: snapshot.generation ?? 0,
+        ...(snapshot.equalizer ? { equalizer: normalizeEqualizerState(snapshot.equalizer) } : {}),
+      }),
+      restoreNativeEqualizer: (equalizer) => set({ equalizer: normalizeEqualizerState(equalizer) }),
       setEqualizerEnabled: (enabled) =>
         set((state) => ({
           equalizer: { ...state.equalizer, enabled },
@@ -194,7 +237,7 @@ export const usePlayerStore = create<PlayerState>()(
       replaceQueuedTrack: (track) =>
         set((state) => ({
           queue: state.queue.map((queued) =>
-            queued.id === track.id ? track : queued
+            trackIdentity(queued) === trackIdentity(track) ? track : queued
           ),
         })),
 
@@ -217,16 +260,23 @@ export const usePlayerStore = create<PlayerState>()(
     }),
     {
       name: "muze-player",
+      storage: createPlaybackStorage(),
       partialize: (state) => ({
         volume: state.volume,
         playMode: state.playMode,
         equalizer: state.equalizer,
+        queue: state.queue,
+        currentIndex: state.currentIndex,
+        currentTime: state.currentTime,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as Partial<PlayerState> | undefined
         return {
           ...current,
           ...persistedState,
+          isPlaying: false,
+          playbackRequest: 0,
+          playbackError: null,
           equalizer: normalizeEqualizerState(persistedState?.equalizer),
         }
       },

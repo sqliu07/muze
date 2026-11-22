@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --test src/store/playerStore.equalizer.test.ts src/lib/spectrum.test.ts src/lib/backgroundDebug.test.ts src/lib/rhythm.test.ts src/lib/lyricAnimation.test.ts src/lib/interludeAnimation.test.ts src/lib/lrcParser.test.ts",
+    "test": "node --test src/lib/*.test.ts src/store/*.test.ts src/platform/*.test.ts src/platform/playback/*.test.ts src/platform/navigation/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
     "@mdi/js": "^7.4.47",
     "@mdi/react": "^1.6.1",
     "@radix-ui/react-context-menu": "^2.2.16",
@@ -22,6 +24,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.99.0",
+    "@tauri-apps/api": "^2.12.0",
     "axios": "^1.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -6,8 +6,10 @@ import {
 } from '@/api/hooks/useSettings'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { useLibrarySource } from '@/platform/useLibrarySource'
 
 export default function SettingsPage() {
+  const source = useLibrarySource()
   const { data: settings, isLoading } = useSettings()
   const updateMutation = useUpdateSettings()
   const testMutation = useTestDeepSeekConnection()
@@ -82,7 +84,7 @@ export default function SettingsPage() {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">歌词翻译</h2>
         <p className="text-sm text-muted-foreground">
-          配置 DeepSeek API Key 以启用结构化歌词翻译。未配置或服务不可用时使用 Google Translate 兜底。
+          {source.kind === 'local' ? '配置 DeepSeek API Key 以启用歌词翻译。密钥由设备系统安全存储，翻译结果缓存到本地。' : '配置 DeepSeek API Key 以启用结构化歌词翻译。未配置或服务不可用时使用 Google Translate 兜底。'}
         </p>
         <div className="space-y-2">
           <label className="text-sm font-medium">DeepSeek API Key</label>

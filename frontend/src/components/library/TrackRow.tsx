@@ -17,26 +17,27 @@ export default function TrackRow({ track, index, isActive, onPlay }: TrackRowPro
 
   const handleToggleFav = (e: React.MouseEvent) => {
     e.stopPropagation()
-    toggleFav.mutate({ trackId: track.id, isFavorite: track.is_favorite })
+    toggleFav.mutate({ trackId: track.id, isFavorite: track.is_favorite, sourceId: track.source_id })
   }
 
   return (
     <div
       className={cn(
-        'group flex items-center gap-3 px-4 py-2 rounded-md cursor-pointer hover:bg-muted/50 transition-colors',
+        'group flex min-h-[68px] items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-muted/50 md:gap-3 md:px-4',
         isActive && 'bg-primary/10',
       )}
       onDoubleClick={() => onPlay(track)}
     >
       {/* 序号 / Play 按钮 */}
-      <div className="w-8 text-center shrink-0">
-        <span className="text-sm text-muted-foreground group-hover:hidden">
+      <div className="w-11 shrink-0 text-center md:w-8">
+        <span className="hidden text-sm text-muted-foreground md:block md:group-hover:hidden">
           {index + 1}
         </span>
         <Button
           variant="ghost"
           size="icon"
-          className="hidden group-hover:flex h-8 w-8"
+          className="flex h-11 w-11 md:hidden md:h-8 md:w-8 md:group-hover:flex md:group-focus-within:flex"
+          aria-label={`播放 ${track.title}`}
           onClick={() => onPlay(track)}
         >
           <Play className="h-4 w-4" />
@@ -46,7 +47,7 @@ export default function TrackRow({ track, index, isActive, onPlay }: TrackRowPro
       {/* 封面缩略图 */}
       {track.album?.cover_path ? (
         <img
-          src={getTrackCoverUrl(track.id, track.album?.cover_path)}
+          src={track.source_id === "local:android" ? track.cover_url ?? undefined : getTrackCoverUrl(track.id, track.album?.cover_path, track.source_id)}
           alt={track.title}
           className="h-10 w-10 rounded object-cover shrink-0"
         />
@@ -70,14 +71,14 @@ export default function TrackRow({ track, index, isActive, onPlay }: TrackRowPro
       </div>
 
       {/* 收藏按钮 */}
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleToggleFav}>
+      <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 md:h-8 md:w-8" aria-label={track.is_favorite ? `取消收藏 ${track.title}` : `收藏 ${track.title}`} onClick={handleToggleFav}>
         <Heart
           className={cn('h-4 w-4', track.is_favorite && 'fill-current text-red-500')}
         />
       </Button>
 
       {/* 时长 */}
-      <span className="text-sm text-muted-foreground w-10 text-right shrink-0">
+      <span className="hidden w-10 shrink-0 text-right text-sm text-muted-foreground sm:block">
         {formatDuration(track.duration)}
       </span>
     </div>

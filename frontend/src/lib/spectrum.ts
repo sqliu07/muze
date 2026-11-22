@@ -16,6 +16,13 @@ export function sampleSpectrum(data: Uint8Array, bin: number): number {
   return ((data[lower] ?? 0) * (1 - fraction) + (data[Math.min(lower + 1, data.length - 1)] ?? 0) * fraction) / 255
 }
 
+/** Sampling stops after a reset notification, so silence must not retain a decaying curve. */
+export function resetSilentSpectrum(data: Uint8Array, smoothed: Float32Array): boolean {
+  if (data.some((value) => value !== 0)) return false
+  smoothed.fill(0)
+  return true
+}
+
 export function bassEnergy(data: Uint8Array, sampleRate: number): number {
   if (!data.length || sampleRate <= 0) return 0
   const binWidth = sampleRate / (data.length * 2)

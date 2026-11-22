@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { subscribeAudioAnalysis } from "@/hooks/useAudioAnalyser"
 import { observeCanvasSize } from "@/lib/canvas"
-import { logarithmicBins, sampleSpectrum } from "@/lib/spectrum"
+import { logarithmicBins, resetSilentSpectrum, sampleSpectrum } from "@/lib/spectrum"
 
 interface SpectrumVisualizerProps {
   height?: number
@@ -41,6 +41,7 @@ export function SpectrumVisualizer({
     const unsubscribe = subscribeAudioAnalysis(({ spectrumData, sampleRate }) => {
       const { width, height: canvasHeight } = sizeRef.current
       context.clearRect(0, 0, width, canvasHeight)
+      if (resetSilentSpectrum(spectrumData, smoothRef.current)) return
       if (width <= 0 || canvasHeight <= 0 || spectrumData.length < 2) return
 
       const sourceShape = `${spectrumData.length}:${sampleRate}`
